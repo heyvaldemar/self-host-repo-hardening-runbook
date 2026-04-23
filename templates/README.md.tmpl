@@ -1,0 +1,101 @@
+# {{TITLE}}
+
+[![Deployment Verification](https://github.com/heyvaldemar/{{REPO}}/actions/workflows/deployment-verification.yml/badge.svg?branch=main)](https://github.com/heyvaldemar/{{REPO}}/actions/workflows/deployment-verification.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/heyvaldemar/{{REPO}}/badge)](https://scorecard.dev/viewer/?uri=github.com/heyvaldemar/{{REPO}})
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+## Contents
+
+- [Why this stack?](#why-this-stack)
+- [Getting started](#getting-started)
+- [Features](#features)
+  - [Typical use cases](#typical-use-cases)
+- [Supply chain trust](#supply-chain-trust)
+- [Production checklist](#production-checklist)
+- [Backups](#backups)
+- [Restoring a database backup](#restoring-a-database-backup)
+- [Security Notes](#security-notes)
+- [About the maintainer](#about-the-maintainer)
+
+{{SHORT_DESCRIPTION}}
+
+📙 Full narrative installation guide on the blog: [{{BLOG_LINK_TEXT}}]({{BLOG_LINK_URL}}).
+
+## Why this stack?
+
+{{COMPARISON_TABLE}}
+
+{{VALUE_PROP_PARAGRAPH}}
+
+## Getting started
+
+```bash
+# 1. Clone
+git clone https://github.com/heyvaldemar/{{REPO}}
+cd {{REPO}}
+
+# 2. Create the Docker networks the stack expects
+{{NETWORK_CREATE_COMMANDS}}
+
+# 3. Copy the environment template and fill in required values
+cp .env.example .env
+$EDITOR .env
+# ^ Required: {{REQUIRED_ENV_VARS}}. See .env.example for generation commands.
+
+# 4. Deploy
+docker compose -f {{COMPOSE_FILE}} -p {{PROJECT_NAME}} up -d
+```
+
+Within a minute or two, the stack is live with fresh Let's Encrypt certificates.
+
+## Features
+
+{{FEATURES_LIST}}
+
+### Typical use cases
+
+{{USE_CASES}}
+
+## Supply chain trust
+
+This repository is a **deployment template**, not a custom Docker image. It orchestrates:
+
+{{UPSTREAM_IMAGES}}
+
+All upstream images are pinned to `tag@sha256:<digest>` in `.env.example`. Compose pulls by digest, not by tag. Two users deploying this repo on different days get byte-identical image manifests regardless of upstream repushes.
+
+Dependabot's `docker` ecosystem watches each digest and opens a weekly PR when any of them changes. CI's **Deployment Verification** workflow runs on every push, pull request, and every Monday at 06:00 UTC — it stands up the full compose stack with ephemeral credentials, validates HTTPS routing smoke, and tears down. Drift in upstream images surfaces within a week instead of on the next user deploy.
+
+GitHub Actions are pinned by commit SHA with `# vX.Y.Z` version comments. Dependabot's `github-actions` ecosystem keeps those fresh.
+
+See [`SECURITY.md`](SECURITY.md) for the disclosure policy.
+
+## Production checklist
+
+{{PRODUCTION_CHECKLIST}}
+
+## Backups
+
+{{BACKUPS_SECTION}}
+
+## Restoring a database backup
+
+{{RESTORE_SECTION}}
+
+## Security Notes
+
+{{SECURITY_NOTES_BULLETS}}
+
+See [`SECURITY.md`](SECURITY.md) for the vulnerability disclosure process.
+
+---
+
+## About the maintainer
+
+<div align="center">
+
+**Maintained by [Vladimir Mikhalev](https://github.com/heyvaldemar)** — Docker Captain · IBM Champion · AWS Community Builder
+
+[YouTube](https://www.youtube.com/channel/UCf85kQ0u1sYTTTyKVpxrlyQ?sub_confirmation=1) · [Blog](https://heyvaldemar.com) · [LinkedIn](https://www.linkedin.com/in/heyvaldemar/)
+
+</div>
