@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _(no unreleased changes yet)_
 
+## [1.1.0] - 2026-04-23
+
+### Added
+
+- **Phase 6 — CI linting + upstream image scanning** added to `RUNBOOK.md`. Codifies the final CI-hardening step observed during the keycloak reference-implementation cycle (PR #19):
+  - `lint` job — shellcheck (via `koalaman/shellcheck-alpine:stable`) on every `*.sh` in the repo root, actionlint (via `rhysd/actionlint:1.7.12`) on every workflow YAML. Blocking (5-min timeout). `deploy-and-test` gains `needs: lint` so CI fails fast before burning the 15-minute compose-up slot.
+  - `scan-trivy` job — matrix × N upstream images with `aquasecurity/trivy-action@v0.35.0` (commit-SHA pinned), `severity: CRITICAL,HIGH`, `ignore-unfixed: true`. Per-image SARIF upload to the GitHub Security tab under distinct `trivy-<name>` categories via `github/codeql-action/upload-sarif@v4.35.2` (commit-SHA pinned, matches `scorecard.yml`). `continue-on-error: true` — findings surface for triage but don't gate deployment; the actionable response is a Dependabot digest bump in a separate PR.
+  - Phase 6 includes a `fail-fast: false` matrix, `security-events: write` scoped to the scan job, full verification gates, and design-decision rationale (why `continue-on-error` on scan, why matrix instead of a single script, why direct docker invocation for shellcheck/actionlint).
+- **Common Pitfall 6 — shellcheck SC2016 on intentional `bash -c` deferred expansion.** Documents the pattern used for HTTP smoke checks and the correct placement of `# shellcheck disable=SC2016` directives.
+- **Common Pitfall 7 — Dependabot `docker` ecosystem doesn't auto-bump `.env.example` digests.** Dependabot scans `Dockerfile` and `docker-compose.yml` for literal `image: <ref>` strings and doesn't expand `${VAR}` references. Documents three workarounds (inline tags in compose, migrate to Renovate, accept manual rotation) and the current keycloak reference-implementation choice.
+- **Rollout-strategy phasing guidance table** — maps `Tier × stars × activity` to the subset of phases to apply. Flagship repos get 0–6, long-tail gets 0–2 only, dormant gets archived.
+
+### Changed
+
+- `templates/deployment-verification.yml.tmpl` — ships with the `lint` and `scan-trivy` job skeletons pre-wired. `deploy-and-test` now declares `needs: lint`. Two existing `timeout 5m bash -c '...'` smoke-check blocks include `# shellcheck disable=SC2016` directives with rationale comments inline (necessary to pass actionlint on fresh applications of the template).
+- `RUNBOOK.md` — top line updated from "Six phases" to "Seven phases". Contents TOC expanded with a Phase 6 entry. Rollout-strategy estimates include Phase 6 (~1 hour on first repo).
+- Keycloak reference implementation at [heyvaldemar/keycloak-traefik-letsencrypt-docker-compose](https://github.com/heyvaldemar/keycloak-traefik-letsencrypt-docker-compose) now implements Phase 6 as of [PR #19](https://github.com/heyvaldemar/keycloak-traefik-letsencrypt-docker-compose/pull/19). The runbook's Phase 6 prose references this PR as the working example.
+
 ## [1.0.0] - 2026-04-23
 
 ### Added
@@ -37,5 +55,6 @@ _(no unreleased changes yet)_
 - `.github/dependabot.yml` — dogfood. Tracks updates to the templates' own action pins as new SHAs ship upstream.
 - `.github/workflows/scorecard.yml` — dogfood. The runbook scores itself against the standard it publishes.
 
-[Unreleased]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/releases/tag/v1.0.0

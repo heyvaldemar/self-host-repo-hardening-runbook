@@ -1,6 +1,6 @@
 # The Runbook — Step by Step
 
-Six phases. One PR each. Merge between phases so CI stays green and history is readable.
+Seven phases. One PR each. Merge between phases so CI stays green and history is readable.
 
 ## Contents
 
@@ -11,6 +11,7 @@ Six phases. One PR each. Merge between phases so CI stays green and history is r
 - [Phase 3 — Upstream image digest pinning](#phase-3--upstream-image-digest-pinning)
 - [Phase 4 — README rewrite](#phase-4--readme-rewrite)
 - [Phase 5 — OpenSSF Scorecard](#phase-5--openssf-scorecard)
+- [Phase 6 — CI linting + upstream image scanning](#phase-6--ci-linting--upstream-image-scanning)
 - [Verification gates](#verification-gates)
 - [Common pitfalls](#common-pitfalls)
 
@@ -438,6 +439,123 @@ README: Scorecard badge between Deployment Verification and License.
 
 ---
 
+## Phase 6 — CI linting + upstream image scanning
+
+**Goal:** add a `lint` job (shellcheck + actionlint) and a `scan-trivy` job (matrix × N upstream images with SARIF upload to the GitHub Security tab). Closes the remaining CI gap between deployment-template repos and the image-publishing reference (`aws-kubectl-docker`). After this phase, `deployment-verification.yml` matches the `publish.yml` shape modulo cosign/SBOM/SLSA steps that don't apply to repos that don't publish their own image.
+
+**Branch:** `feat/ci-lint-and-upstream-trivy-scan`
+
+### Job topology (post-merge)
+
+| Job | Deps | Parallel with | Blocks merge? |
+|---|---|---|---|
+| `lint` | — | — | ✅ yes |
+| `scan-trivy` (matrix × N) | — | `deploy-and-test` | ❌ `continue-on-error: true` |
+| `deploy-and-test` | `lint` | `scan-trivy` | ✅ yes |
+
+### Steps
+
+1. **Add `lint` job** — blocking, 5-minute timeout:
+   - `shellcheck` on every `*.sh` in the repo root via `koalaman/shellcheck-alpine:stable`. Direct docker image invocation — one less supply-chain layer to pin than a wrapping GitHub Action.
+   - `actionlint` on every workflow YAML via `rhysd/actionlint:1.7.12`. Catches typos, invalid step references, and GitHub Actions footguns the YAML parser doesn't catch. actionlint itself is a single Go binary.
+
+2. **Add `scan-trivy` job** — matrix × N upstream images, 10-minute timeout, `continue-on-error: true`, `fail-fast: false`. Per image:
+   - `aquasecurity/trivy-action@<sha> # v0.35.0` with `severity: CRITICAL,HIGH`, `ignore-unfixed: true` (CVEs without an upstream fix aren't actionable for a template repo).
+   - `github/codeql-action/upload-sarif@<sha> # v4.35.2` (matches `scorecard.yml` pin) with `category: trivy-<name>` so each image's findings surface under a distinct Security-tab category.
+   - Permissions: `security-events: write` for the SARIF upload.
+
+   Matrix shape (use the `.env.example` image list from Phase 3):
+   ```yaml
+   strategy:
+     fail-fast: false
+     matrix:
+       include:
+         - name: postgres
+           image: "postgres:16@sha256:<digest>"
+         - name: traefik
+           image: "traefik:3.2@sha256:<digest>"
+         - name: <service>
+           image: "<registry>/<service>:<tag>@sha256:<digest>"
+   ```
+
+3. **Make `deploy-and-test` depend on `lint`:**
+   ```yaml
+   deploy-and-test:
+     needs: lint
+   ```
+   CI fails fast on shellcheck/actionlint errors before burning the 15-minute compose-up slot. `scan-trivy` stays parallel — Trivy findings don't gate deployment (actionable response is a Dependabot digest bump, not a forced re-run).
+
+4. **Resolve intentional shellcheck false positives.** If the deploy job uses `timeout 5m bash -c '...$VAR...'` for HTTP smoke checks, shellcheck flags SC2016 on the single-quoted `$VAR`. The deferred expansion is intentional — the inner `bash -c` inherits the job-level `env:`. Add explicit directives immediately before the offending line:
+
+   ```yaml
+   - name: Wait for the application to be ready via Traefik
+     run: |
+       echo "Checking the routing and availability of the application via Traefik..."
+       # $APP_HOSTNAME is intentionally expanded by the inner bash -c
+       # (which inherits the job-level env:), not by the outer shell.
+       # shellcheck disable=SC2016
+       timeout 5m bash -c 'while ! curl -fsSLk "https://$APP_HOSTNAME"; do
+         echo "Waiting for the application to be ready..."
+         sleep 10
+       done'
+   ```
+
+   The directive must be on the line **immediately preceding** the `timeout` invocation — shellcheck scopes inline disables to the next non-comment line.
+
+5. **Update CHANGELOG** — `[Unreleased] → Changed` block documenting both new jobs.
+
+6. **Verify locally before pushing:**
+   ```bash
+   # actionlint clean
+   docker run --rm -v "$PWD:/mnt" -w /mnt \
+     rhysd/actionlint:1.7.12 -color
+
+   # shellcheck clean
+   docker run --rm -v "$PWD:/mnt" -w /mnt \
+     koalaman/shellcheck-alpine:stable shellcheck ./*.sh
+
+   # workflow YAML parses
+   python3 -c "import yaml; yaml.safe_load(open('.github/workflows/deployment-verification.yml'))"
+   ```
+
+7. **Commit, push, PR.** See [Verification gates → Phase 6](#phase-6-1).
+
+### Commit message template
+
+```
+ci: add lint + upstream Trivy scan jobs
+
+Closes the remaining CI gap between this deployment-template repo
+and the image-publishing reference (aws-kubectl-docker). After merge,
+deployment-verification.yml matches the publish.yml shape modulo
+cosign/SBOM/SLSA which don't apply to a repo that doesn't publish
+its own image.
+
+New jobs:
+- lint — shellcheck + actionlint, 5-min timeout, blocking.
+  deploy-and-test gains `needs: lint` so CI fails fast on typos
+  before burning the 15-min compose-up slot.
+- scan-trivy — matrix × N upstream images (<list>),
+  continue-on-error: true, parallel to deploy-and-test. Per-image
+  SARIF upload under `trivy-<name>` categories in the Security
+  tab. Findings don't block deployment — the actionable response
+  is a Dependabot digest bump (separate PR flow).
+
+Also: placed `# shellcheck disable=SC2016` directives with
+rationale comments immediately before the two existing
+`timeout 5m bash -c '...'` smoke-check lines. The deferred
+expansion is intentional — inner bash inherits the job-level env.
+```
+
+### Design decisions worth recording in the PR body
+
+- **Why `continue-on-error: true` on `scan-trivy`?** A hard block would cause red CI on every new CVE disclosure — CVEs land against upstream images on a cadence the maintainer doesn't control. The actionable response is a Dependabot digest bump, already its own PR flow. Security-tab findings surface for triage; they don't gate deployment.
+- **Why `needs: lint` on `deploy-and-test` but not on `scan-trivy`?** Lint errors mean the CI itself is structurally broken. Trivy findings are about upstream images — they're not a reason to skip CI for our own changes.
+- **Why direct docker image invocation for shellcheck/actionlint, not a wrapping GitHub Action?** One less SHA to pin, review, and rotate via Dependabot. The two docker images are single-binary and pinned to specific tags.
+- **Why matrix of N entries instead of one script that scans all N?** Each image gets its own job log, its own SARIF file, and its own Security-tab category. A CVE in `postgres` shouldn't show up under the `<service>` category. `fail-fast: false` means one image scan failing doesn't block the others.
+
+---
+
 ## Verification gates
 
 Run these checks after each phase, before merging. Each is a hard gate — if it fails, fix before merge.
@@ -550,6 +668,53 @@ grep "uses:" .github/workflows/scorecard.yml | grep -vc '@[0-9a-f]\{40\}'
 # expected: 0
 ```
 
+### Phase 6
+
+```bash
+# Lint job present with correct image pins
+grep -E "koalaman/shellcheck-alpine:stable" .github/workflows/deployment-verification.yml
+grep -E "rhysd/actionlint:[0-9]+\.[0-9]+\.[0-9]+" .github/workflows/deployment-verification.yml
+# expected: both match
+
+# actionlint passes locally — same check CI will run
+docker run --rm -v "$PWD:/mnt" -w /mnt rhysd/actionlint:1.7.12 -color
+# expected: exit 0, no output
+
+# shellcheck passes locally
+docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck-alpine:stable shellcheck ./*.sh
+# expected: exit 0, no output
+
+# scan-trivy matrix has all upstream images from .env.example
+python3 <<'EOF'
+import yaml
+d = yaml.safe_load(open('.github/workflows/deployment-verification.yml'))
+assert 'scan-trivy' in d['jobs'], 'scan-trivy job missing'
+assert d['jobs']['scan-trivy'].get('continue-on-error') is True, 'scan-trivy must be continue-on-error'
+strat = d['jobs']['scan-trivy']['strategy']
+assert strat.get('fail-fast') is False, 'matrix must be fail-fast: false'
+matrix = strat['matrix']['include']
+assert len(matrix) >= 2, f'expected >= 2 upstream images, got {len(matrix)}'
+for e in matrix:
+    assert '@sha256:' in e['image'], f'entry missing digest pin: {e}'
+print(f'OK — {len(matrix)} digest-pinned images in scan-trivy matrix')
+EOF
+# expected: OK — N images
+
+# deploy-and-test blocks on lint
+python3 -c "
+import yaml
+d = yaml.safe_load(open('.github/workflows/deployment-verification.yml'))
+needs = d['jobs']['deploy-and-test'].get('needs', [])
+if isinstance(needs, str): needs = [needs]
+assert 'lint' in needs, f'deploy-and-test must need lint; got {needs}'
+print('OK — deploy-and-test needs lint')
+"
+
+# SARIF upload has distinct category per matrix entry
+grep -E "category: trivy-" .github/workflows/deployment-verification.yml
+# expected: exactly one match, using ${{ matrix.name }}
+```
+
 ---
 
 ## Common pitfalls
@@ -642,16 +807,76 @@ If you find tracked credentials in Phase 0, the question is whether to rewrite g
 
 Use `git filter-repo` only if (a) the credential is still in active use somewhere hard to rotate, or (b) you have a disclosure obligation (e.g., GDPR-protected data was accidentally committed). Neither usually applies to homelab self-host templates.
 
+### Pitfall 6 — shellcheck SC2016 on intentional `bash -c` deferred expansion
+
+The deployment-verification template uses this pattern for HTTP smoke checks:
+
+```yaml
+timeout 5m bash -c 'while ! curl -fsSLk "https://$APP_HOSTNAME"; do ...'
+```
+
+The single-quoted `$APP_HOSTNAME` is deliberate: the outer shell must **not** expand it; the inner `bash -c` expands it against the job-level `env:` block it inherits. Expanding in the outer shell would work today but couples the string literal to the env-setup order, and actionlint/shellcheck warnings accumulate on every CI PR.
+
+shellcheck flags this as SC2016 ("Expressions don't expand in single quotes, use double quotes for that."). The fix is to add the disable directive **immediately before** the `timeout` line, with a comment explaining why:
+
+```yaml
+# $APP_HOSTNAME is intentionally expanded by the inner bash -c
+# (which inherits the job-level env:), not by the outer shell.
+# shellcheck disable=SC2016
+timeout 5m bash -c 'while ! curl -fsSLk "https://$APP_HOSTNAME"; do
+  ...
+done'
+```
+
+**Common failure mode:** placing the disable directive somewhere else (e.g., at the top of the `run:` block) — shellcheck scopes inline disables to the *next non-comment line*, so an out-of-position directive doesn't silence the warning.
+
+### Pitfall 7 — Dependabot `docker` ecosystem doesn't auto-bump `.env.example` digests
+
+Dependabot's `docker` ecosystem scans `Dockerfile` and `docker-compose.yml` for literal `image: <ref>` strings. It **does not** expand `${VAR}` references, so digest pins stored as:
+
+```
+# .env.example
+TRAEFIK_IMAGE_TAG=traefik:3.2@sha256:e561a37f...
+```
+
+...referenced in compose as:
+
+```yaml
+# docker-compose.yml
+services:
+  traefik:
+    image: ${TRAEFIK_IMAGE_TAG}
+```
+
+...are invisible to Dependabot. Phase 3's digest pinning works for reproducibility but the weekly auto-bump PR that Phase 3's commit message promises **won't fire** for digests living in env files.
+
+**Workarounds (pick one):**
+
+- **Inline the tags in the compose file.** Replace `image: ${TRAEFIK_IMAGE_TAG}` with `image: traefik:3.2@sha256:e561a37f...`. Dependabot picks it up. Cost: users lose the ability to override the image via their own `.env`.
+- **Migrate to Renovate.** Renovate's `regexManagers` can be pointed at `.env.example` and recognize `<VAR>=<ref>@sha256:<digest>` patterns. More config, more capable.
+- **Accept manual rotation.** Document it in the repo README. The CI weekly cron detects upstream drift even without an auto-PR; a human bumps the digest when CI starts failing.
+
+The keycloak reference implementation currently accepts manual rotation. Revisit if digest drift causes recurring CI failures.
+
 ---
 
 ## Rollout strategy
 
-After the first repo (keycloak) takes ~10-12 hours, the second should take ~6 hours. By the fifth repo it's 3-4 hours each. The compounding factor is fluency — the first time you resolve three digests for the compose file is slow; the tenth time is a 30-second script invocation.
+After the first repo (keycloak) takes ~10-12 hours for Phases 0–5 plus ~1 hour for Phase 6, the second should take ~6 hours end-to-end. By the fifth repo it's 3–4 hours each. The compounding factor is fluency — the first time you resolve three digests for the compose file is slow; the tenth time is a 30-second script invocation.
 
 Recommended rollout order (highest-impact first):
 
-1. Top 3-5 by stars — keycloak ✓, nextcloud, zabbix, gitlab, gitea
-2. Next tier 6-15 — outline, minecraft, rocketchat, jira, grafana, ollama, confluence, vaultwarden, mattermost, ghost
+1. Top 3–5 by stars — keycloak ✓, nextcloud, zabbix, gitlab, gitea
+2. Next tier 6–15 — outline, minecraft, rocketchat, jira, grafana, ollama, confluence, vaultwarden, mattermost, ghost
 3. Long tail — everything else. Consider archiving repos with <5 stars + no push in >2 years instead of hardening them.
 
-Maintain the first 5 actively (merge Dependabot PRs weekly). The long tail can be tier-2 — apply this runbook's Phase 0-2 only (security + community + CI hardening) and skip Phases 3-5 on repos that don't warrant the ongoing Dependabot / Scorecard maintenance.
+Maintain the first 5 actively (merge Dependabot PRs weekly). The long tail can be tier-2 — apply this runbook's Phase 0–2 only (security + community + CI hardening) and skip Phases 3–6 on repos that don't warrant the ongoing Dependabot / Scorecard / Trivy-triage maintenance.
+
+### Phasing guidance — which subset to apply
+
+| Tier | Stars | Active? | Phases to apply |
+|---|---|---|---|
+| Flagship | 20+ | Yes | 0–6 (full program) |
+| Active | 5–20 | Yes | 0–5 (skip Phase 6 if Dependabot noise is unwelcome; add later) |
+| Long tail | <5 | Infrequent | 0–2 (security + community + CI hardening); skip 3–6 |
+| Dormant | Any | No push in >2 years | Archive instead of harden |
