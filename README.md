@@ -1,13 +1,13 @@
 # Self-Host Repo Hardening Runbook
 
-A documented engineering standard and repeatable 6-phase program for bringing a self-host deployment-template repository — typically one in the `<service>-traefik-letsencrypt-docker-compose` shape — up to a **supply-chain-hardened baseline** matching [heyvaldemar/keycloak-traefik-letsencrypt-docker-compose](https://github.com/heyvaldemar/keycloak-traefik-letsencrypt-docker-compose) and [heyvaldemar/aws-kubectl-docker](https://github.com/heyvaldemar/aws-kubectl-docker).
+A documented engineering standard and repeatable 7-phase program for bringing a self-host deployment-template repository — typically one in the `<service>-traefik-letsencrypt-docker-compose` shape — up to a **supply-chain-hardened baseline** matching [heyvaldemar/keycloak-traefik-letsencrypt-docker-compose](https://github.com/heyvaldemar/keycloak-traefik-letsencrypt-docker-compose) and [heyvaldemar/aws-kubectl-docker](https://github.com/heyvaldemar/aws-kubectl-docker).
 
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/heyvaldemar/self-host-repo-hardening-runbook/badge)](https://scorecard.dev/viewer/?uri=github.com/heyvaldemar/self-host-repo-hardening-runbook)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## What this is
 
-A runbook you follow once per repo. After executing the six PRs in order, the target repo has:
+A runbook you follow once per repo. After executing the seven PRs in order, the target repo has:
 
 - **Credentials out of git** — tracked `.env` replaced with `.env.example` + gitignored real file + compose fails fast without required vars.
 - **Community health files** — `LICENSE`, `SECURITY.md`, `CHANGELOG.md`, Dependabot groups for `github-actions` + `docker` ecosystems, `.github/FUNDING.yml` removed.
@@ -15,6 +15,7 @@ A runbook you follow once per repo. After executing the six PRs in order, the ta
 - **Upstream images pinned by digest** — `image:tag@sha256:...` in `.env.example` + CI ephemeral env, Dependabot auto-bumps.
 - **README rewritten** — evaluator-first structure (badges → TOC → Why this → Getting started → Features → Supply chain trust → Production checklist → preserved ops content → Security Notes → compact About-maintainer footer). Zero affiliate links, zero crypto wallets, zero guru voice.
 - **OpenSSF Scorecard workflow** — runs weekly, publishes to scorecard.dev viewer, uploads SARIF to GitHub Security tab.
+- **CI linting + upstream Trivy scan** — `lint` job (shellcheck + actionlint, blocking) and `scan-trivy` matrix job (per upstream image, SARIF to Security tab under distinct categories, `continue-on-error` so findings don't block deployment).
 
 ## When to apply
 
@@ -40,9 +41,10 @@ Use this runbook when you want to bring a **public deployment-template repo** up
 | 3 — Upstream image digest pinning | 0.5–1 | **High** (script-automated digest resolution) |
 | 4 — README rewrite | 1.5–2 | Medium (skeleton template + per-service fills) |
 | 5 — OpenSSF Scorecard | 0.25–0.5 | **High** (drop-in file) |
-| **Total** | **~3.5–6.5 h** | — |
+| 6 — CI linting + upstream image scanning | 0.5–1 | **High** (drop-in job skeletons + per-repo matrix fill) |
+| **Total** | **~4–7.5 h** | — |
 
-First-time application against `keycloak-traefik-letsencrypt-docker-compose` took ~10-12 hours across 6 PRs. With this runbook + the included templates and scripts, subsequent repos should take ~3-5 hours of focused work.
+First-time application against `keycloak-traefik-letsencrypt-docker-compose` took ~10-12 hours across 7 PRs. With this runbook + the included templates and scripts, subsequent repos should take ~4–6 hours of focused work.
 
 ## Quick start
 
