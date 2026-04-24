@@ -12,6 +12,7 @@ Seven phases. One PR each. Merge between phases so CI stays green and history is
 - [Phase 4 — README rewrite](#phase-4--readme-rewrite)
 - [Phase 5 — OpenSSF Scorecard](#phase-5--openssf-scorecard)
 - [Phase 6 — CI linting + upstream image scanning](#phase-6--ci-linting--upstream-image-scanning)
+- [Optional — Architecture Decision Records (flagship repos)](#optional--architecture-decision-records-flagship-repos)
 - [Verification gates](#verification-gates)
 - [Common pitfalls](#common-pitfalls)
 
@@ -152,34 +153,36 @@ their production credentials.
 
 ### Steps
 
-1. **Copy templates** from `templates/` in this runbook:
+1. **Run the helper script** — handles all file copies with auto-derived substitutions (year range, repo name, first-commit year), preserves existing SECURITY.md / CHANGELOG.md if present, and `git rm`s `FUNDING.yml`:
+
    ```bash
    RUNBOOK=~/repos/self-host-repo-hardening-runbook
    TARGET=~/repos/<target-repo>
 
-   # LICENSE — replace {{YEAR_RANGE}} with e.g. "2021-2026"
+   $RUNBOOK/scripts/apply-phase-1.sh $TARGET
+   ```
+
+   The script leaves the working tree dirty for review. Expected post-run state:
+   - `LICENSE` — `{{YEAR_RANGE}}` substituted to `<first-commit-year>-<current-year>`.
+   - `SECURITY.md` — drop-in copy with `{{SUPPORTED_VERSIONS_NOTE}}`, `{{UPSTREAM_IMAGES}}`, `{{HISTORICAL_ISSUE_OR_OMIT}}` placeholders left for manual fill.
+   - `CHANGELOG.md` — `{{REPO}}`, `{{SERVICE}}`, `{{FIRST_COMMIT_YEAR}}` auto-substituted; `{{UNRELEASED_ENTRIES_OR_PLACEHOLDER}}` and `{{YEAR_SPAN_MINOR}}` marked for manual fill.
+   - `.github/dependabot.yml` — drop-in copy (new version: grouping + docker ecosystem).
+   - `.github/FUNDING.yml` — removed via `git rm` if it existed.
+
+2. **Fill remaining placeholders** in `SECURITY.md` and `CHANGELOG.md` (the content-dependent ones the script can't derive). Grep for `{{` to find them all:
+   ```bash
+   cd $TARGET && grep -n '{{' SECURITY.md CHANGELOG.md
+   ```
+
+3. **(Optional) Run the manual fallback** if the script isn't available. Each step from above in plain `cp` / `sed` form:
+   ```bash
    cp $RUNBOOK/templates/LICENSE.mit.tmpl $TARGET/LICENSE
    YEAR=$(cd $TARGET && git log --reverse --format=%ai | head -1 | cut -d- -f1)
-   sed -i.bak "s/{{YEAR_RANGE}}/${YEAR}-2026/" $TARGET/LICENSE
-   rm $TARGET/LICENSE.bak
-
-   # SECURITY.md — adapt Supply Chain Trust section per repo
+   sed -i.bak "s/{{YEAR_RANGE}}/${YEAR}-2026/" $TARGET/LICENSE && rm $TARGET/LICENSE.bak
    cp $RUNBOOK/templates/SECURITY.md.tmpl $TARGET/SECURITY.md
-   # then edit: replace {{UPSTREAM_IMAGES}} block with actual images
-
-   # CHANGELOG.md — adapt Project-history paragraph
    cp $RUNBOOK/templates/CHANGELOG.md.tmpl $TARGET/CHANGELOG.md
-   # then edit: replace {{REPO}} and {{YEAR_SPAN}}
-   ```
-
-2. **Replace `.github/dependabot.yml`** — identical across all repos:
-   ```bash
    cp $RUNBOOK/templates/dependabot.yml $TARGET/.github/dependabot.yml
-   ```
-
-3. **Delete `.github/FUNDING.yml`:**
-   ```bash
-   git rm .github/FUNDING.yml
+   test -f $TARGET/.github/FUNDING.yml && (cd $TARGET && git rm .github/FUNDING.yml)
    ```
 
 4. **Verify**, commit, push, PR. See [Verification gates → Phase 1](#phase-1-1).
@@ -402,19 +405,25 @@ Long form — the README rewrite is the most substantive PR. Use the [keycloak P
 
 ### Steps
 
-1. **Drop in the workflow** — `templates/scorecard.yml` is identical across all repos:
+1. **Run the helper script** — drops in `.github/workflows/scorecard.yml` (refuses to overwrite if one exists and prints a diff instead) and echoes the README badge with owner/repo pre-filled from `git remote`:
+
    ```bash
-   cp $RUNBOOK/templates/scorecard.yml $TARGET/.github/workflows/scorecard.yml
+   $RUNBOOK/scripts/apply-phase-5.sh $TARGET
    ```
 
-2. **Add Scorecard badge to README** — between Deployment Verification and License badges:
+2. **Add the Scorecard badge to README** — between Deployment Verification and License badges (the script prints the exact line with owner/repo filled in):
    ```markdown
    [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/<owner>/<repo>/badge)](https://scorecard.dev/viewer/?uri=github.com/<owner>/<repo>)
    ```
 
 3. **Update CHANGELOG** — `[Unreleased] → Added` entry.
 
-4. **Verify**, commit, push, PR. See [Verification gates → Phase 5](#phase-5-1).
+4. **(Optional) Run the manual fallback** if the script isn't available:
+   ```bash
+   cp $RUNBOOK/templates/scorecard.yml $TARGET/.github/workflows/scorecard.yml
+   ```
+
+5. **Verify**, commit, push, PR. See [Verification gates → Phase 5](#phase-5-1).
 
 ### Commit message template
 
@@ -553,6 +562,53 @@ expansion is intentional — inner bash inherits the job-level env.
 - **Why `needs: lint` on `deploy-and-test` but not on `scan-trivy`?** Lint errors mean the CI itself is structurally broken. Trivy findings are about upstream images — they're not a reason to skip CI for our own changes.
 - **Why direct docker image invocation for shellcheck/actionlint, not a wrapping GitHub Action?** One less SHA to pin, review, and rotate via Dependabot. The two docker images are single-binary and pinned to specific tags.
 - **Why matrix of N entries instead of one script that scans all N?** Each image gets its own job log, its own SARIF file, and its own Security-tab category. A CVE in `postgres` shouldn't show up under the `<service>` category. `fail-fast: false` means one image scan failing doesn't block the others.
+
+---
+
+## Optional — Architecture Decision Records (flagship repos)
+
+**When to apply:** flagship repositories (20+ stars, active maintenance). Skip for long-tail repos — they're unnecessary overhead there.
+
+**Why:** the deployment-template README answers *"how do I deploy this?"*. ADRs answer *"why was it built this way?"* — which is what architecture-evaluators ask first. Two or three ADRs per flagship repo is enough; the effort is ~30 minutes per record.
+
+### Steps
+
+1. **Create the ADR directory:**
+   ```bash
+   mkdir -p docs/adr
+   ```
+
+2. **Copy the template** for each decision worth recording:
+   ```bash
+   cp $RUNBOOK/templates/ADR.md.tmpl docs/adr/0001-<slug>.md
+   # e.g. docs/adr/0001-traefik-over-nginx.md
+   ```
+
+3. **Fill in** `{{NNNN}}`, `{{TITLE}}`, `{{YYYY-MM-DD}}`, and the Context / Decision / Alternatives / Consequences sections. Keep each ADR under one page — if the decision needs more context, extract a separate design doc and link to it from the ADR's References section.
+
+### What to document (typical topics)
+
+- Why Traefik over nginx / Caddy / HAProxy?
+- Why PostgreSQL over alternative backend DBs the service supports?
+- Why Docker Compose over Swarm / Kubernetes for this template shape?
+- Why Let's Encrypt TLS-ALPN-01 over HTTP-01 / DNS-01?
+- Why the specific backup strategy (on-host volume + `pg_dump` gz) over alternatives?
+- Why basic-auth on the Traefik dashboard over forward-auth / IP allowlist?
+
+Not every flagship repo needs all six — pick the 2-3 decisions whose "why" is least obvious to a drive-by reader.
+
+### Commit message template
+
+```
+docs: add ADR-000N — <short decision summary>
+
+<one-paragraph summary of the decision, the alternatives considered,
+and why the chosen path wins for this repo's audience (homelab /
+small-team self-host) specifically>
+
+ADR location: docs/adr/000N-<slug>.md
+Format: Michael Nygard (Context / Decision / Alternatives / Consequences).
+```
 
 ---
 
