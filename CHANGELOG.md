@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _(no unreleased changes yet)_
 
+## [1.2.0] - 2026-04-23
+
+### Added
+
+- **`scripts/apply-phase-1.sh`** — helper script that drops Phase 1 community files into a target repo with auto-derived substitutions:
+  - `LICENSE` — `{{YEAR_RANGE}}` substituted from `<first-commit-year>-<current-year>` (read via `git log --reverse`).
+  - `SECURITY.md` — drop-in copy, skipped if the target already has one. Content-dependent placeholders (`{{SUPPORTED_VERSIONS_NOTE}}`, `{{UPSTREAM_IMAGES}}`, `{{HISTORICAL_ISSUE_OR_OMIT}}`) left for manual fill with clear markers.
+  - `CHANGELOG.md` — `{{REPO}}`, `{{SERVICE}}` (derived from repo name first-token, capitalised), and `{{FIRST_COMMIT_YEAR}}` auto-substituted. Skipped if the target already has a CHANGELOG to avoid overwriting history.
+  - `.github/dependabot.yml` — drop-in copy (overwrites existing since the new shape adds grouping + docker ecosystem).
+  - `.github/FUNDING.yml` — `git rm` if present.
+  - Does not commit or push. Leaves the working tree dirty for human review. Prints a check-list of remaining manual fills.
+- **`scripts/apply-phase-5.sh`** — helper script that drops `.github/workflows/scorecard.yml` into a target repo. Refuses to overwrite an existing file (prints a diff instead). Echoes the README badge line with owner/repo pre-filled from the target's `git remote`.
+- **`templates/ADR.md.tmpl`** — Michael Nygard-style Architecture Decision Record template (Context / Decision / Alternatives / Consequences / References sections + header metadata). Drop-in starter for `docs/adr/000N-<slug>.md` files on flagship repos.
+- **Optional "Architecture Decision Records (flagship repos)" section in `RUNBOOK.md`** — when/why to apply, step-by-step (mkdir + cp + fill), six typical decision topics worth recording, commit-message template. Explicitly scoped to flagship repos (20+ stars, active); not recommended for long-tail.
+
+### Changed
+
+- **RUNBOOK Phase 1 steps** — rewritten as "run the helper script" first, then a grep-for-`{{` step to find remaining manual fills, with the manual `cp` / `sed` fallback preserved for users who prefer it or don't have the script available.
+- **RUNBOOK Phase 5 steps** — rewritten as "run the helper script" first, with the manual `cp` fallback preserved.
+- **RUNBOOK Contents TOC** — new "Optional — Architecture Decision Records (flagship repos)" entry between Phase 6 and Verification gates.
+
 ## [1.1.0] - 2026-04-23
 
 ### Added
@@ -55,6 +76,7 @@ _(no unreleased changes yet)_
 - `.github/dependabot.yml` — dogfood. Tracks updates to the templates' own action pins as new SHAs ship upstream.
 - `.github/workflows/scorecard.yml` — dogfood. The runbook scores itself against the standard it publishes.
 
-[Unreleased]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/releases/tag/v1.0.0

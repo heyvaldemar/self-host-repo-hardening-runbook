@@ -36,15 +36,15 @@ Use this runbook when you want to bring a **public deployment-template repo** up
 | Phase | Hours | Automation potential |
 |---|---|---|
 | 0 — Security audit + `.env` hygiene | 0.5–1 | Low (per-repo secrets differ) |
-| 1 — Community files + scaffolding | 0.5–1 | **High** (mostly file copies) |
-| 2 — CI workflow hardening | 0.5–1 | **High** (identical pins across repos) |
-| 3 — Upstream image digest pinning | 0.5–1 | **High** (script-automated digest resolution) |
+| 1 — Community files + scaffolding | 0.25–0.5 | **High** (`scripts/apply-phase-1.sh`) |
+| 2 — CI workflow hardening | 0.5–1 | **High** (`scripts/dereference-github-tag.sh` + identical pins) |
+| 3 — Upstream image digest pinning | 0.5–1 | **High** (`scripts/resolve-image-digest.sh`) |
 | 4 — README rewrite | 1.5–2 | Medium (skeleton template + per-service fills) |
-| 5 — OpenSSF Scorecard | 0.25–0.5 | **High** (drop-in file) |
+| 5 — OpenSSF Scorecard | 0.1–0.25 | **High** (`scripts/apply-phase-5.sh`) |
 | 6 — CI linting + upstream image scanning | 0.5–1 | **High** (drop-in job skeletons + per-repo matrix fill) |
-| **Total** | **~4–7.5 h** | — |
+| **Total** | **~3.5–7 h** | — |
 
-First-time application against `keycloak-traefik-letsencrypt-docker-compose` took ~10-12 hours across 7 PRs. With this runbook + the included templates and scripts, subsequent repos should take ~4–6 hours of focused work.
+First-time application against `keycloak-traefik-letsencrypt-docker-compose` took ~10-12 hours across 7 PRs (pre-automation). With this runbook + the included templates and helper scripts, subsequent repos should take ~3.5–5 hours of focused work. Flagship repos that opt into the [optional ADR phase](RUNBOOK.md#optional--architecture-decision-records-flagship-repos) add ~1 hour for 2–3 decision records.
 
 ## Quick start
 
@@ -87,13 +87,16 @@ self-host-repo-hardening-runbook/
 │   ├── LICENSE.mit.tmpl
 │   ├── SECURITY.md.tmpl
 │   ├── CHANGELOG.md.tmpl
+│   ├── ADR.md.tmpl               ← Architecture Decision Record starter
 │   ├── dependabot.yml
 │   ├── scorecard.yml
 │   ├── deployment-verification.yml.tmpl
 │   └── README.md.tmpl
-├── scripts/                      ← helpers for digest + SHA resolution
+├── scripts/                      ← helpers for digest, SHA, and phase application
 │   ├── resolve-image-digest.sh
-│   └── dereference-github-tag.sh
+│   ├── dereference-github-tag.sh
+│   ├── apply-phase-1.sh          ← Phase 1 community-files drop-in
+│   └── apply-phase-5.sh          ← Phase 5 Scorecard drop-in
 └── .github/
     ├── dependabot.yml            ← dogfood
     └── workflows/
