@@ -1,6 +1,8 @@
 # The Runbook — Step by Step
 
-Seven phases. One PR each. Merge between phases so CI stays green and history is readable.
+Eight phases. One PR each. Merge between phases so CI stays green and history is readable.
+
+This is the runbook for **Compose-stack repos** (e.g. [`<service>-traefik-letsencrypt-docker-compose`](https://github.com/heyvaldemar/keycloak-traefik-letsencrypt-docker-compose)). For **image-publishing repos** (e.g. [`aws-kubectl-docker`](https://github.com/heyvaldemar/aws-kubectl-docker)) see the companion [`IMAGE-PUBLISHING-RUNBOOK.md`](IMAGE-PUBLISHING-RUNBOOK.md).
 
 ## Contents
 
@@ -12,6 +14,7 @@ Seven phases. One PR each. Merge between phases so CI stays green and history is
 - [Phase 4 — README rewrite](#phase-4--readme-rewrite)
 - [Phase 5 — OpenSSF Scorecard](#phase-5--openssf-scorecard)
 - [Phase 6 — CI linting + upstream image scanning](#phase-6--ci-linting--upstream-image-scanning)
+- [Phase 7 — Container security context + resource limits](#phase-7--container-security-context--resource-limits)
 - [Optional — Architecture Decision Records (flagship repos)](#optional--architecture-decision-records-flagship-repos)
 - [Verification gates](#verification-gates)
 - [Common pitfalls](#common-pitfalls)
@@ -565,6 +568,143 @@ expansion is intentional — inner bash inherits the job-level env.
 
 ---
 
+## Phase 7 — Container security context + resource limits
+
+**Goal:** harden each service in the compose file with a non-permissive Linux security context (`security_opt`, `cap_drop`, `read_only`) and explicit memory + CPU ceilings. Reduces blast radius if a service is compromised; prevents a single misbehaving container from starving the host.
+
+**Branch:** `feat/container-security-context-and-resource-limits`
+
+### Steps
+
+1. **Add `security_opt: ["no-new-privileges:true"]` to every service.** Blocks setuid escalation paths even if a process inside the container escapes its initial capability set. No runtime cost. Stable in Compose since Docker 1.13.
+
+2. **Drop all Linux capabilities, add back only what's needed:**
+
+   ```yaml
+   cap_drop:
+     - ALL
+   cap_add:
+     # Add only what the service genuinely needs. Examples:
+     # - NET_BIND_SERVICE  # Traefik binding to privileged ports 80/443
+     # - SYS_RESOURCE      # Postgres with shared_buffers larger than host shmmax
+   ```
+
+   For most services in a typical homelab/small-team stack, no `cap_add` is needed. Test by `docker compose up -d` and watch the service start cleanly. If the container exits or fails healthchecks, inspect logs for `Operation not permitted` lines and add the specific capability.
+
+3. **Add `read_only: true` where the service supports it.** Requires explicit `tmpfs` mounts for paths the service writes to at runtime, plus named volumes for persistent state:
+
+   ```yaml
+   service:
+     read_only: true
+     tmpfs:
+       - /tmp
+       - /run
+       - /var/run/<service>
+     volumes:
+       - <service>-data:/var/lib/<service>:rw  # persistent state stays writable
+   ```
+
+   Enabling `read_only` on a service that writes to unexpected paths breaks startup with `EROFS`. Stage incrementally: enable on one service, verify, then move to the next. See [Pitfall 8](#pitfall-8--read_only-true--unexpected-writable-paths) for the most common failure mode and how to debug it.
+
+4. **Add memory and CPU ceilings via `deploy.resources.limits`** (Compose v3+) or `mem_limit:` / `cpus:` (Compose v2 syntax, also accepted by Docker Compose CLI). Without limits, one runaway container can OOM-kill the rest of the stack and the host:
+
+   ```yaml
+   service:
+     deploy:
+       resources:
+         limits:
+           memory: 1g
+           cpus: "1.5"
+   ```
+
+   Sizing rule of thumb: start with **2× observed steady-state** under realistic load, then revisit after a week of metrics. Reasonable defaults for a small Compose stack:
+   - Application service (e.g. Keycloak, Nextcloud): `1g` memory, `1.5` CPU
+   - Postgres: `512m` memory, `1` CPU
+   - Traefik: `256m` memory, `0.5` CPU
+   - Backup sidecar: `256m` memory, `0.25` CPU
+
+   Do not omit the limit on the backup sidecar — `pg_dump` of a large database can balloon memory if the dump pipe stalls.
+
+5. **(Optional) Add `pids_limit: <N>`** to bound process count per container. Mitigates fork-bomb-class denial of service. Reasonable defaults: `200` for most services, `500` for Postgres.
+
+6. **(Optional) Add `user: "<uid>:<gid>"`** if the upstream image supports it. Many official images already define a non-root user — confirm with:
+
+   ```bash
+   docker run --rm <upstream-image> id
+   ```
+
+   If `id` returns a non-root UID, set `user: "<uid>:<gid>"` in the compose file to match. If `id` returns `uid=0(root)`, skip — running an upstream image as a non-default user often breaks because the image's ENTRYPOINT writes to paths owned by root. Document the upstream's user-handling in a comment on the service.
+
+7. **Healthchecks coverage.** Verify every long-running service has a healthcheck. Phase 0 establishes the broad pattern, but the cross-repo audit revealed healthchecks are not always uniformly applied — especially on backup sidecars. Pattern:
+
+   ```yaml
+   service:
+     healthcheck:
+       test: ["CMD-SHELL", "<service-specific check>"]
+       interval: 10s
+       timeout: 5s
+       retries: 3
+       start_period: 60s  # only if the service has a slow startup
+   ```
+
+   Sidecars that loop forever (backup containers, watchdogs) can omit a healthcheck, but document why in a comment on the service.
+
+8. **Verify locally:**
+
+   ```bash
+   # Stack starts and reaches healthy
+   docker compose -f <compose-file> up -d
+   docker compose -f <compose-file> ps  # all services show "healthy" or "running"
+
+   # Security context applied
+   docker inspect <container> --format '{{ json .HostConfig.SecurityOpt }}'
+   # expected: includes "no-new-privileges:true"
+
+   docker inspect <container> --format '{{ json .HostConfig.CapDrop }}'
+   # expected: ["ALL"] (or similar)
+
+   docker inspect <container> --format '{{ .HostConfig.ReadonlyRootfs }}'
+   # expected: true (only on services where read_only was applied)
+
+   # Memory cap honoured
+   docker stats --no-stream <container>
+   # MEM USAGE should report against the configured limit, not host total
+   ```
+
+9. **Update CHANGELOG** — `[Unreleased] → Changed` with a compact summary of what changed per service.
+
+10. **Commit, push, PR.** See [Verification gates → Phase 7](#phase-7-1).
+
+### Commit message template
+
+```
+feat(security): container security context + resource limits
+
+Closes the post-Phase-6 hardening work surfaced by the cross-repo
+audit. The compose file previously relied on the docker default
+security context (no caps dropped, writable rootfs, no resource
+ceilings). After this PR, every long-running service:
+
+- has security_opt: ["no-new-privileges:true"]
+- drops all Linux capabilities (cap_drop: ["ALL"]) and adds back
+  only <list> on <service> (and nothing on the others)
+- runs with read_only: true plus explicit tmpfs mounts for /tmp
+  and /run (and any service-specific writable paths)
+- has memory + CPU ceilings via deploy.resources.limits
+- has a healthcheck, including the previously-uncovered <list>
+
+No public interface change; tested locally and in CI's deployment
+verification job.
+```
+
+### Why the trade-off is worth it
+
+Without these settings, a single compromised service has full Linux capabilities, a writable rootfs, no UID isolation, and no resource ceiling. Most container-escape CVE chains require one of those four to land. Tightening all four is roughly 30 minutes of work per service after the first one — and the first one is the slowest because you discover the upstream image's actual runtime path needs.
+
+The trade-off is brittleness: an upstream image change that adds a new write path silently breaks the read-only mount until you patch the compose. Track this via the weekly Deployment Verification cron — if a healthcheck starts failing after a Dependabot digest bump, the new path is the likely culprit.
+
+---
+
 ## Optional — Architecture Decision Records (flagship repos)
 
 **When to apply:** flagship repositories (20+ stars, active maintenance). Skip for long-tail repos — they're unnecessary overhead there.
@@ -771,6 +911,64 @@ grep -E "category: trivy-" .github/workflows/deployment-verification.yml
 # expected: exactly one match, using ${{ matrix.name }}
 ```
 
+### Phase 7
+
+```bash
+# security_opt: no-new-privileges:true on every service
+python3 <<'EOF'
+import yaml, sys
+d = yaml.safe_load(open('<compose-file>'))
+for name, svc in (d.get('services') or {}).items():
+    so = svc.get('security_opt') or []
+    if 'no-new-privileges:true' not in so:
+        print(f'FAIL: {name} missing no-new-privileges:true', file=sys.stderr)
+        sys.exit(1)
+print('OK — all services have no-new-privileges:true')
+EOF
+
+# cap_drop: [ALL] on every service
+python3 <<'EOF'
+import yaml, sys
+d = yaml.safe_load(open('<compose-file>'))
+for name, svc in (d.get('services') or {}).items():
+    cd = svc.get('cap_drop') or []
+    if 'ALL' not in cd:
+        print(f'FAIL: {name} not dropping ALL caps', file=sys.stderr)
+        sys.exit(1)
+print('OK — all services drop ALL caps')
+EOF
+
+# Memory limit on every service (deploy.resources.limits.memory or mem_limit)
+python3 <<'EOF'
+import yaml, sys
+d = yaml.safe_load(open('<compose-file>'))
+for name, svc in (d.get('services') or {}).items():
+    mem = (svc.get('deploy', {}).get('resources', {}).get('limits', {}) or {}).get('memory') \
+          or svc.get('mem_limit')
+    if not mem:
+        print(f'FAIL: {name} has no memory limit', file=sys.stderr)
+        sys.exit(1)
+print('OK — all services have memory limits')
+EOF
+
+# Healthchecks on long-running services (sidecars exempt by inline comment)
+docker compose -f <compose-file> up -d
+sleep 60  # let healthchecks settle
+docker compose -f <compose-file> ps --format json \
+  | python3 -c "
+import json, sys
+data = sys.stdin.read().strip()
+rows = [json.loads(l) for l in data.splitlines()] if data else []
+for c in rows:
+    health = c.get('Health', '')
+    if health and health != 'healthy':
+        print(f'FAIL: {c[\"Name\"]} health = {health}', file=sys.stderr)
+        sys.exit(1)
+print('OK — all services with healthchecks are healthy')
+"
+docker compose -f <compose-file> down
+```
+
 ---
 
 ## Common pitfalls
@@ -914,11 +1112,34 @@ services:
 
 The keycloak reference implementation currently accepts manual rotation. Revisit if digest drift causes recurring CI failures.
 
+### Pitfall 8 — `read_only: true` + unexpected writable paths
+
+Enabling `read_only` on a service breaks startup if the upstream image writes to a path you didn't anticipate. Symptom: container exits immediately with logs containing `Read-only file system` or `EROFS`.
+
+Approach: enable `read_only` on one service at a time. After `docker compose up -d`, watch the service logs. If the service errors out, identify the failing path from the error message and add a `tmpfs:` mount (for ephemeral data) or a named volume (for persistent state).
+
+Common writable paths upstream images expect:
+
+- `/tmp` — almost always needed
+- `/run`, `/var/run` — process state, sockets
+- `/var/lib/<service>` — persistent state (use a named volume, not tmpfs)
+- `/var/log/<service>` — service logs (tmpfs is acceptable if you don't ship logs to a file)
+- Service-specific cache dirs — Keycloak writes to `/opt/keycloak/data/tmp` and similar; check the upstream image's docs.
+
+Post-change verification:
+
+```bash
+docker inspect <container> --format '{{ .HostConfig.ReadonlyRootfs }}'
+# expected: true
+```
+
+If the service comes up green but `ReadonlyRootfs` reports `false`, your compose change didn't take effect — re-check indentation. `read_only` is a per-service top-level key, not nested under `deploy:`.
+
 ---
 
 ## Rollout strategy
 
-After the first repo (keycloak) takes ~10-12 hours for Phases 0–5 plus ~1 hour for Phase 6, the second should take ~6 hours end-to-end. By the fifth repo it's 3–4 hours each. The compounding factor is fluency — the first time you resolve three digests for the compose file is slow; the tenth time is a 30-second script invocation.
+After the first repo (keycloak) takes ~10-12 hours for Phases 0–5 plus ~1 hour for Phase 6 plus ~1.5 hours for Phase 7, the second should take ~7 hours end-to-end. By the fifth repo it's 4–5 hours each. The compounding factor is fluency — the first time you resolve three digests for the compose file is slow; the tenth time is a 30-second script invocation. Phase 7 stays per-repo costly because the read-only mount and resource-limit decisions are service-specific and don't fully template.
 
 Recommended rollout order (highest-impact first):
 
@@ -926,13 +1147,13 @@ Recommended rollout order (highest-impact first):
 2. Next tier 6–15 — outline, minecraft, rocketchat, jira, grafana, ollama, confluence, vaultwarden, mattermost, ghost
 3. Long tail — everything else. Consider archiving repos with <5 stars + no push in >2 years instead of hardening them.
 
-Maintain the first 5 actively (merge Dependabot PRs weekly). The long tail can be tier-2 — apply this runbook's Phase 0–2 only (security + community + CI hardening) and skip Phases 3–6 on repos that don't warrant the ongoing Dependabot / Scorecard / Trivy-triage maintenance.
+Maintain the first 5 actively (merge Dependabot PRs weekly). The long tail can be tier-2 — apply this runbook's Phase 0–2 only (security + community + CI hardening) and skip Phases 3–7 on repos that don't warrant the ongoing Dependabot / Scorecard / Trivy-triage maintenance.
 
 ### Phasing guidance — which subset to apply
 
 | Tier | Stars | Active? | Phases to apply |
 |---|---|---|---|
-| Flagship | 20+ | Yes | 0–6 (full program) |
-| Active | 5–20 | Yes | 0–5 (skip Phase 6 if Dependabot noise is unwelcome; add later) |
-| Long tail | <5 | Infrequent | 0–2 (security + community + CI hardening); skip 3–6 |
+| Flagship | 20+ | Yes | 0–7 (full program) |
+| Active | 5–20 | Yes | 0–6 (skip Phase 7 unless service-compromise risk justifies the per-service tuning effort) |
+| Long tail | <5 | Infrequent | 0–2 (security + community + CI hardening); skip 3–7 |
 | Dormant | Any | No push in >2 years | Archive instead of harden |
