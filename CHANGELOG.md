@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _(no unreleased changes yet)_
 
+## [1.3.0] - 2026-04-28
+
+### Added
+
+- **`IMAGE-PUBLISHING-RUNBOOK.md`** — companion runbook codifying the image-publishing patterns from [aws-kubectl-docker](https://github.com/heyvaldemar/aws-kubectl-docker). 6 mandatory phases (Dockerfile hardening, community files + smoke test, CI publish workflow with cosign + SBOM + SLSA + Trivy, README rewrite, OpenSSF Scorecard, tag retention + Docker Hub immutability) plus an optional non-root migration phase for repos with existing `:latest` users. Verbatim cosign-signing block with rationale for pinning Cosign v2.6.1 (not v3.x). Verbatim `attest-build-provenance` block with `push-to-registry: false` rationale. 8 common pitfalls including the `flavor: latest=false` interaction with Docker Hub tag immutability.
+- **`RUNBOOK.md` Phase 7 — Container security context + resource limits.** `security_opt: no-new-privileges:true`, `cap_drop: [ALL]`, `read_only: true` with explicit tmpfs mounts, memory + CPU ceilings via `deploy.resources.limits`, healthcheck-coverage verification. Surfaced by the cross-repo audit against keycloak-traefik in 2026-04-28; previously not codified anywhere.
+- **`README.md` "Which runbook do I need?" decision table** disambiguating Compose-stack vs image-publishing applicability.
+- **Common Pitfall 8 — `read_only: true` + unexpected writable paths.** Documents the most common Phase 7 failure mode: enabling `read_only` on a service whose upstream image writes to a path you didn't anticipate. Lists common writable paths to anticipate (`/tmp`, `/run`, `/var/run`, service-specific cache dirs).
+
+### Changed
+
+- `RUNBOOK.md` top line "Seven phases" → "Eight phases."
+- Rollout-strategy estimates include Phase 7 (~1.5 h on first repo, ~1 h on subsequent). Total per Compose-stack repo ~5–8 h (was ~3.5–7).
+- Phasing tier table updated: flagship 0–7, active 0–6 (skip Phase 7 unless service-compromise risk justifies the per-service tuning effort), long-tail 0–2.
+- `README.md` reframed from single-runbook to two-runbook hub. Two separate time-estimate tables. Reference-implementations table now pairs each repo with its corresponding runbook.
+
+### Known gaps
+
+- No `Dockerfile.tmpl` or `publish.yml.tmpl` yet — image-publishing users copy directly from `aws-kubectl-docker`. Templates are a future addition; the README's repository-contents tree calls this out.
+- The keycloak-traefik reference implementation does not yet implement Phase 7 in `main`; the [audit report from 2026-04-28](https://github.com/heyvaldemar/keycloak-traefik-letsencrypt-docker-compose) flags this as the largest remaining gap. Phase 7 application against keycloak-traefik is tracked as a separate PR series.
+
 ## [1.2.0] - 2026-04-23
 
 ### Added
@@ -76,7 +97,8 @@ _(no unreleased changes yet)_
 - `.github/dependabot.yml` — dogfood. Tracks updates to the templates' own action pins as new SHAs ship upstream.
 - `.github/workflows/scorecard.yml` — dogfood. The runbook scores itself against the standard it publishes.
 
-[Unreleased]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/releases/tag/v1.0.0
