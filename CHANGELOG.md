@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _(no unreleased changes yet)_
 
+## [1.3.1] - 2026-05-05
+
+### Added
+
+- **`IMAGE-PUBLISHING-RUNBOOK.md` Common Pitfall 9 — `sha-*` tag immutability vs scheduled rebuilds.** Same family of bug as Pitfall 3 (`flavor: latest=false`) and the `kube-v*` tag fix from aws-kubectl-docker PR #32: `docker/metadata-action`'s default tag emission rules don't account for tag immutability. The weekly schedule cron and `workflow_dispatch` reuse the source SHA but produce a fresh image manifest digest (newer base layers), and pushing to the existing immutable `sha-<X>` tag is rejected with HTTP 403. Documents the failure mode, the one-line fix (`enable=` predicate gating the rule to push and pull_request events), the per-event behavior matrix, and the broader rule: when adding an immutability policy in Phase 5, audit every tag rule in `metadata-action` and add the appropriate `enable=` predicate. Surfaced by aws-kubectl-docker [PR #37](https://github.com/heyvaldemar/aws-kubectl-docker/pull/37) after the 2026-05-04 weekly cron failure.
+
 ## [1.3.0] - 2026-04-28
 
 ### Added
@@ -97,7 +103,8 @@ _(no unreleased changes yet)_
 - `.github/dependabot.yml` — dogfood. Tracks updates to the templates' own action pins as new SHAs ship upstream.
 - `.github/workflows/scorecard.yml` — dogfood. The runbook scores itself against the standard it publishes.
 
-[Unreleased]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.0.0...v1.1.0
