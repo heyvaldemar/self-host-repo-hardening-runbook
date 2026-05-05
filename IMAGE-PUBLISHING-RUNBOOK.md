@@ -1282,6 +1282,45 @@ Example from aws-kubectl-docker:
 # ad-hoc zip extraction in CI/CD pipelines.
 ```
 
+### Pitfall 9 — `sha-*` tag immutability vs scheduled rebuilds
+
+Same root cause as Pitfall 3 (`flavor: latest=false`), different tag. The `sha-*` rule emitted by `docker/metadata-action` re-emits the same `sha-<X>` on every event type, including `schedule` and `workflow_dispatch`. The weekly cron from Phase 2 is meant to rebuild against fresher base layers — which produces a different image manifest digest for the same source SHA. Pushing to `sha-<X>` then fails with HTTP 403 against the Docker Hub immutability policy from Phase 5:
+
+```
+ERROR: failed to push <image>:sha-0546ce8: denied: requested access to the resource is denied
+- tag sha-0546ce8 is already assigned to an image in this repository and cannot be updated
+due to immutability settings.
+```
+
+The build-and-push step exits 1, which short-circuits the rest of the job — `attest-build-provenance`, cosign install, cosign sign, and Trivy scan all skip. CI goes red on cron without any human change to the repo.
+
+The collision surfaces the first time a cron run lands on a stale source SHA after the immutability policy was applied. Earlier cron runs that landed within hours of a fresh main push didn't trigger it because the source SHA was new each time.
+
+**Fix:** gate the `sha-*` tag rule to events that produce a new source SHA:
+
+```yaml
+type=sha,prefix=sha-,format=short,enable=${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
+```
+
+Behavior after the fix:
+
+| Event | sha-* emitted? | Pushed to registry? | Rationale |
+|---|---|---|---|
+| Push to main / push tag | ✅ | ✅ | New source SHA → fresh tag, no collision |
+| Pull request | ✅ | ❌ (`push: false`) | Tag list completeness only |
+| Schedule (weekly cron) | ❌ | — | Only re-tag mutable `:latest` and `:edge` with rebuilt image |
+| `workflow_dispatch` | ❌ | — | Manual rebuild without source change; if source did change, push instead |
+
+The "first push of a source SHA owns the immutable `sha-*` tag forever" semantic is preserved — which is the property downstream consumers depend on when pinning by `sha-*`.
+
+**Why not just disable tag immutability?** Immutability is the whole point of the `sha-*` pin: a downstream consumer that pinned `:sha-XYZ` should get byte-identical content forever. Allowing re-push of `sha-XYZ` with different content silently invalidates that contract.
+
+**Why not delete and re-push?** Same problem at one remove — the `sha-*` pin loses its "pin to first build" semantic.
+
+**Same family of bug as Pitfall 3 and `kube-v*`.** `docker/metadata-action`'s default emission rules don't account for tag immutability. Each rule that emits an immutable-category tag needs an explicit `enable=` predicate matching the events where re-push is safe. When you add the immutability policy in Phase 5, audit every tag rule in `metadata-action` and add the predicate.
+
+Reference: aws-kubectl-docker [PR #37](https://github.com/heyvaldemar/aws-kubectl-docker/pull/37) (the worked example, surfaced by the 2026-05-04 cron run).
+
 ---
 
 ## Rollout strategy
