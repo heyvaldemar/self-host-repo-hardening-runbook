@@ -149,6 +149,8 @@ self-host-repo-hardening-runbook/
 │   ├── dereference-github-tag.sh      ← used by both runbooks
 │   ├── apply-phase-1.sh               ← used by both runbooks (community files)
 │   └── apply-phase-5.sh               ← used by both runbooks (Scorecard)
+├── audits/                            ← compliance snapshots of reference impls
+│   └── keycloak-2026-04-28.md         ← keycloak-traefik audit (HIGH/MED/LOW findings)
 └── .github/
     ├── dependabot.yml                 ← dogfood
     └── workflows/
@@ -156,6 +158,8 @@ self-host-repo-hardening-runbook/
 ```
 
 The image-publishing runbook does not yet ship a `Dockerfile.tmpl` or `publish.yml.tmpl` — those are a future addition. Until then, copy directly from [aws-kubectl-docker](https://github.com/heyvaldemar/aws-kubectl-docker) and adapt.
+
+The `audits/` directory captures point-in-time compliance snapshots of the reference implementations against the runbook standard. Each audit is dated and lists HIGH/MEDIUM/LOW findings plus remediation order. Useful when a reference repo and the runbook diverge — the audit pins the exact gap and the work needed to close it.
 
 ## Contributing
 
