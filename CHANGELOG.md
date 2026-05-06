@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _(no unreleased changes yet)_
 
+## [1.3.2] - 2026-05-06
+
+### Added
+
+- **`audits/` directory** with point-in-time compliance snapshots of reference implementations against the runbook standard. First entry: `audits/keycloak-2026-04-28.md` — full audit of `keycloak-traefik-letsencrypt-docker-compose` against the augmented 8-phase Compose-stack runbook. Catalogues universal-standard compliance, Phase 0–7 status per phase, HIGH/MEDIUM/LOW findings with remediation effort estimates, and recommended remediation order. Surfaced two patterns the keycloak repo evolved past the runbook (backup-restore-e2e CI job, RTO/RPO documentation table) which are candidates for future runbook additions.
+- README repository-contents tree updated with the `audits/` entry plus a paragraph explaining the audits' role (point-in-time gap pins between reference impl and runbook).
+
 ## [1.3.1] - 2026-05-05
 
 ### Added
@@ -103,7 +110,8 @@ _(no unreleased changes yet)_
 - `.github/dependabot.yml` — dogfood. Tracks updates to the templates' own action pins as new SHAs ship upstream.
 - `.github/workflows/scorecard.yml` — dogfood. The runbook scores itself against the standard it publishes.
 
-[Unreleased]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.3.2...HEAD
+[1.3.2]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.1.0...v1.2.0
