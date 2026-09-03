@@ -1,4 +1,4 @@
-# The Image-Publishing Runbook — Step by Step
+# The Image-Publishing Runbook: Step by Step
 
 Six phases. One PR each. Merge between phases so CI stays green and history is readable.
 
@@ -9,14 +9,14 @@ If you are not sure which runbook applies, see [`README.md`](README.md) → "Whi
 ## Contents
 
 - [Pre-flight (once per repo)](#pre-flight-once-per-repo)
-- [Phase 0 — Dockerfile hardening](#phase-0--dockerfile-hardening)
-- [Phase 1 — Community files + smoke test](#phase-1--community-files--smoke-test)
-- [Phase 2 — CI publish workflow](#phase-2--ci-publish-workflow)
-- [Phase 3 — README rewrite](#phase-3--readme-rewrite)
-- [Phase 4 — OpenSSF Scorecard](#phase-4--openssf-scorecard)
-- [Phase 5 — Tag retention + Docker Hub immutability](#phase-5--tag-retention--docker-hub-immutability)
-- [Optional — Non-root migration (BREAKING CHANGE for existing :latest users)](#optional--non-root-migration-breaking-change-for-existing-latest-users)
-- [Optional — Architecture Decision Records](#optional--architecture-decision-records)
+- [Phase 0: Dockerfile hardening](#phase-0-dockerfile-hardening)
+- [Phase 1: Community files + smoke test](#phase-1-community-files--smoke-test)
+- [Phase 2: CI publish workflow](#phase-2-ci-publish-workflow)
+- [Phase 3: README rewrite](#phase-3-readme-rewrite)
+- [Phase 4: OpenSSF Scorecard](#phase-4-openssf-scorecard)
+- [Phase 5: Tag retention + Docker Hub immutability](#phase-5-tag-retention--docker-hub-immutability)
+- [Optional: Non-root migration (BREAKING CHANGE for existing :latest users)](#optional-non-root-migration-breaking-change-for-existing-latest-users)
+- [Optional: Architecture Decision Records](#optional-architecture-decision-records)
 - [Verification gates](#verification-gates)
 - [Common pitfalls](#common-pitfalls)
 - [Rollout strategy](#rollout-strategy)
@@ -34,7 +34,7 @@ cd <image-repo>-docker
 git status
 git branch --show-current
 
-# Get the first-commit year — you'll need it for LICENSE
+# Get the first-commit year, you'll need it for LICENSE
 git log --reverse --format=%ai | head -1 | cut -d- -f1
 
 # Read the current state. Look for:
@@ -58,7 +58,7 @@ head -20 Dockerfile
 
 ---
 
-## Phase 0 — Dockerfile hardening
+## Phase 0: Dockerfile hardening
 
 **Goal:** multi-stage Dockerfile with a digest-pinned base image, full OCI labels, non-root runtime user (UID 10001, GID 0), `.dockerignore`, `.hadolint.yaml`. Build-only tooling stays in the builder stage.
 
@@ -118,7 +118,7 @@ head -20 Dockerfile
          io.heyvaldemar.<custom-key>="${<value>}"
    ```
 
-   `VCS_REF` and `BUILD_DATE` are stamped by CI from `${{ github.sha }}` and `date -u +'%Y-%m-%dT%H:%M:%SZ'` (see Phase 2). The `io.heyvaldemar.*` custom labels surface domain-specific facts that don't fit the OCI namespace — for example, the resolved upstream version of a bundled binary.
+   `VCS_REF` and `BUILD_DATE` are stamped by CI from `${{ github.sha }}` and `date -u +'%Y-%m-%dT%H:%M:%SZ'` (see Phase 2). The `io.heyvaldemar.*` custom labels surface domain-specific facts that don't fit the OCI namespace, for example, the resolved upstream version of a bundled binary.
 
 5. **Create a non-root runtime user** with UID 10001 and primary GID 0.
 
@@ -137,7 +137,7 @@ head -20 Dockerfile
     && chmod -R g=u /home/app
 
    # HOME must be set explicitly for tooling that resolves cache paths (~/.kube,
-   # ~/.aws, ~/.cache, etc.) — otherwise they fall back to / under the random
+   # ~/.aws, ~/.cache, etc.), otherwise they fall back to / under the random
    # OpenShift UID and break.
    ENV HOME=/home/app
 
@@ -150,7 +150,7 @@ head -20 Dockerfile
 
    The combination "UID 10001, GID 0" is the OpenShift Security Context Constraint (SCC) `restricted-v2` and Kubernetes `restricted` Pod Security Standard contract: any UID, primary GID 0, no privilege escalation. Pinning UID 10001 specifically avoids host UID collisions on Ubuntu/Debian developer machines (their default `useradd` starts at 1000).
 
-   For an image with an existing `:latest` audience, the user-switch is a BREAKING CHANGE. See [Optional — Non-root migration](#optional--non-root-migration-breaking-change-for-existing-latest-users) for the migration flow with a `v1-maintenance` escape hatch.
+   For an image with an existing `:latest` audience, the user-switch is a BREAKING CHANGE. See [Optional: Non-root migration](#optional-non-root-migration-breaking-change-for-existing-latest-users) for the migration flow with a `v1-maintenance` escape hatch.
 
 6. **Add `.dockerignore`** at repo root:
 
@@ -174,7 +174,7 @@ head -20 Dockerfile
    # See https://github.com/hadolint/hadolint/wiki for rule reference.
 
    ignored:
-     # DL3008 — pin apt versions. Intentionally unpinned: the weekly base image
+     # DL3008, pin apt versions. Intentionally unpinned: the weekly base image
      # rebuild (publish.yml cron) is the upgrade path. Pinning would defeat it.
      - DL3008
    ```
@@ -193,7 +193,7 @@ head -20 Dockerfile
    docker run --rm -i hadolint/hadolint:latest < Dockerfile
    ```
 
-9. **Commit, push, PR.** See [Verification gates → Phase 0](#phase-0-1).
+9. **Commit, push, PR.** See [Verification gates → Phase 0](#phase-0).
 
 ### Commit message template
 
@@ -217,11 +217,11 @@ Lands the foundation for the supply-chain hardening track:
   weekly base rebuild is the upgrade path).
 ```
 
-For repos with existing `:latest` users, this PR becomes a BREAKING CHANGE — see [Optional — Non-root migration](#optional--non-root-migration-breaking-change-for-existing-latest-users) for the additional steps (`v1-maintenance` branch, README "Breaking Changes in vX.0" section, SECURITY.md "Supported Versions" date-bound row, CHANGELOG `BREAKING CHANGES` block).
+For repos with existing `:latest` users, this PR becomes a BREAKING CHANGE: see [Optional: Non-root migration](#optional-non-root-migration-breaking-change-for-existing-latest-users) for the additional steps (`v1-maintenance` branch, README "Breaking Changes in vX.0" section, SECURITY.md "Supported Versions" date-bound row, CHANGELOG `BREAKING CHANGES` block).
 
 ---
 
-## Phase 1 — Community files + smoke test
+## Phase 1: community files + smoke test
 
 **Goal:** `LICENSE`, `SECURITY.md`, `CHANGELOG.md`, upgraded Dependabot config, `FUNDING.yml` removed, plus a local `scripts/smoke-test.sh` that exercises every binary the image advertises.
 
@@ -229,7 +229,7 @@ For repos with existing `:latest` users, this PR becomes a BREAKING CHANGE — s
 
 ### Steps
 
-1. **Run the helper script** to drop the community files into the target repo. This is the same script used for Type B repos — Phase 1 community files are the same shape regardless of repo type.
+1. **Run the helper script** to drop the community files into the target repo. This is the same script used for Type B repos. Phase 1 community files are the same shape regardless of repo type.
 
    ```bash
    RUNBOOK=~/repos/self-host-repo-hardening-runbook
@@ -239,15 +239,15 @@ For repos with existing `:latest` users, this PR becomes a BREAKING CHANGE — s
    ```
 
    The script leaves the working tree dirty for review. Expected post-run state:
-   - `LICENSE` — `{{YEAR_RANGE}}` substituted to `<first-commit-year>-<current-year>`.
-   - `SECURITY.md` — drop-in copy with `{{SUPPORTED_VERSIONS_NOTE}}`, `{{UPSTREAM_IMAGES}}`, `{{HISTORICAL_ISSUE_OR_OMIT}}` placeholders left for manual fill.
-   - `CHANGELOG.md` — `{{REPO}}`, `{{SERVICE}}`, `{{FIRST_COMMIT_YEAR}}` auto-substituted; `{{UNRELEASED_ENTRIES_OR_PLACEHOLDER}}` and `{{YEAR_SPAN_MINOR}}` marked for manual fill.
-   - `.github/dependabot.yml` — drop-in copy with `github-actions` + `docker` ecosystems, both grouped on minor/patch.
-   - `.github/FUNDING.yml` — removed via `git rm` if it existed.
+   - `LICENSE`: `{{YEAR_RANGE}}` substituted to `<first-commit-year>-<current-year>`.
+   - `SECURITY.md`: drop-in copy with `{{SUPPORTED_VERSIONS_NOTE}}`, `{{UPSTREAM_IMAGES}}`, `{{HISTORICAL_ISSUE_OR_OMIT}}` placeholders left for manual fill.
+   - `CHANGELOG.md`: `{{REPO}}`, `{{SERVICE}}`, `{{FIRST_COMMIT_YEAR}}` auto-substituted; `{{UNRELEASED_ENTRIES_OR_PLACEHOLDER}}` and `{{YEAR_SPAN_MINOR}}` marked for manual fill.
+   - `.github/dependabot.yml`: drop-in copy with `github-actions` + `docker` ecosystems, both grouped on minor/patch.
+   - `.github/FUNDING.yml`: removed via `git rm` if it existed.
 
 2. **Adapt SECURITY.md to the image-publishing flavor.** The default template assumes a deployment-template repo. For an image-publishing repo, the relevant claims are different:
 
-   - "This repository **publishes a Docker image** at `hub.docker.com/r/heyvaldemar/<image>`." (not "deployment template").
+   - "This repository publishes a Docker image at `hub.docker.com/r/heyvaldemar/<image>`." (not "deployment template").
    - "Every published digest is signed with cosign using Sigstore keyless OIDC issued to this repository's GitHub Actions workflow."
    - "SBOM (SPDX, generated by BuildKit) and SLSA build provenance (`provenance: mode=max`) attestations are attached to every digest."
    - "GitHub native build provenance is also generated via `actions/attest-build-provenance` and is available at `/attestations`."
@@ -255,7 +255,7 @@ For repos with existing `:latest` users, this PR becomes a BREAKING CHANGE — s
 
    See [aws-kubectl-docker `SECURITY.md`](https://github.com/heyvaldemar/aws-kubectl-docker/blob/main/SECURITY.md) for the canonical shape, including the `cosign verify` command users run to validate the signature before deploy.
 
-3. **Add `scripts/smoke-test.sh`.** The smoke test is a standalone bash script users (and you) can run against any tag of the image to verify the advertised toolchain. Pattern (taken verbatim from [aws-kubectl-docker](https://github.com/heyvaldemar/aws-kubectl-docker/blob/main/scripts/smoke-test.sh) — adapt the binary list to match what your image bundles):
+3. **Add `scripts/smoke-test.sh`.** The smoke test is a standalone bash script users (and you) can run against any tag of the image to verify the advertised toolchain. Pattern (taken verbatim from [aws-kubectl-docker](https://github.com/heyvaldemar/aws-kubectl-docker/blob/main/scripts/smoke-test.sh), adapt the binary list to match what your image bundles):
 
    ```bash
    #!/usr/bin/env bash
@@ -276,7 +276,7 @@ For repos with existing `:latest` users, this PR becomes a BREAKING CHANGE — s
    say "Image: $IMAGE"
 
    # Core toolchain: every binary must respond. No `|| true` fallbacks for the
-   # advertised toolchain — a missing binary is a test failure.
+   # advertised toolchain, a missing binary is a test failure.
    run "docker run --rm '$IMAGE' <bin1> --version"
    run "docker run --rm '$IMAGE' <bin2> --version"
    ...
@@ -285,7 +285,7 @@ For repos with existing `:latest` users, this PR becomes a BREAKING CHANGE — s
    run "docker run --rm '$IMAGE' sh -c 'ls -lh /etc/ssl/certs/ca-certificates.crt'"
    run "docker run --rm '$IMAGE' sh -c 'curl -fsSI -o /dev/null -w \"HTTPS OK (%{http_code})\\n\" https://example.com'"
 
-   # Optional real-world checks — these require host config and ARE allowed to
+   # Optional real-world checks, these require host config and ARE allowed to
    # fail silently. Pattern: `|| true` so a missing host config doesn't fail
    # the smoke test, but the output still shows what happened.
    if [ -d "${HOME}/<config-dir>" ]; then
@@ -297,7 +297,7 @@ For repos with existing `:latest` users, this PR becomes a BREAKING CHANGE — s
 
    Mark it executable (`chmod +x scripts/smoke-test.sh`) and reference it from the README's "Local Build & Test" section in Phase 3.
 
-4. **Verify, commit, push, PR.** See [Verification gates → Phase 1](#phase-1-1).
+4. **Verify, commit, push, PR.** See [Verification gates → Phase 1](#phase-1).
 
 ### Commit message template
 
@@ -325,7 +325,7 @@ Removed:
 
 ---
 
-## Phase 2 — CI publish workflow
+## Phase 2: CI publish workflow
 
 **Goal:** `.github/workflows/publish.yml` that lints, builds multi-arch, attaches BuildKit SBOM + SLSA provenance, signs with cosign, attests with `actions/attest-build-provenance`, scans with Trivy, and syncs the README to Docker Hub. PR builds run the build but skip everything that requires registry credentials.
 
@@ -342,7 +342,7 @@ Removed:
 
 ### Steps
 
-1. **Define triggers** — push to main, semver tag pushes, PRs, weekly cron for upstream base-image drift, manual dispatch:
+1. **Define triggers**: push to main, semver tag pushes, PRs, weekly cron for upstream base-image drift, manual dispatch:
 
    ```yaml
    on:
@@ -361,9 +361,9 @@ Removed:
      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
    ```
 
-   Concurrency only cancels in-progress on PR pushes — branch and tag builds always complete so signatures and attestations don't get orphaned.
+   Concurrency only cancels in-progress on PR pushes. Branch and tag builds always complete so signatures and attestations don't get orphaned.
 
-2. **`lint` job** — hadolint on the Dockerfile, shellcheck on every `*.sh` in `scripts/`. 5-minute timeout. `contents: read` only.
+2. **`lint` job**: hadolint on the Dockerfile, shellcheck on every `*.sh` in `scripts/`. 5-minute timeout. `contents: read` only.
 
    ```yaml
    lint:
@@ -384,7 +384,7 @@ Removed:
            shellcheck scripts/**/*.sh
    ```
 
-3. **`build` job** — multi-arch build with BuildKit attestations, cosign keyless signing, GitHub native attestation. Permissions narrowed per-job:
+3. **`build` job**: multi-arch build with BuildKit attestations, cosign keyless signing, GitHub native attestation. Permissions narrowed per-job:
 
    ```yaml
    build:
@@ -401,7 +401,7 @@ Removed:
        digest: ${{ steps.build.outputs.digest }}
    ```
 
-   Steps inside the job — pin every `uses:` line to a commit SHA with a `# vX.Y.Z` comment using `scripts/dereference-github-tag.sh`:
+   Steps inside the job: pin every `uses:` line to a commit SHA with a `# vX.Y.Z` comment using `scripts/dereference-github-tag.sh`:
 
    ```yaml
    - name: Checkout
@@ -471,7 +471,7 @@ Removed:
 
    `flavor: latest=false` is critical: without it, semver tag pushes also retag `:latest`, which causes immutability conflicts once the Docker Hub immutability policy from Phase 5 is in place. With `latest=false`, only the explicit `type=raw,value=latest,enable={{is_default_branch}}` tag rule re-tags `:latest`, and only on main branch pushes.
 
-   `sbom: true` and `provenance: mode=max` are the BuildKit attestation flags. `mode=max` includes full provenance (build environment, materials, configuration) — the `min` mode strips the materials section.
+   `sbom: true` and `provenance: mode=max` are the BuildKit attestation flags. `mode=max` includes full provenance (build environment, materials, configuration). The `min` mode strips the materials section.
 
 4. **GitHub native build provenance attestation:**
 
@@ -487,7 +487,7 @@ Removed:
        push-to-registry: false
    ```
 
-   The `push-to-registry: false` is deliberate. The action can push the attestation to the registry as an OCI referrer sidecar, but Docker Hub's OCI referrer credential handoff proved unreliable in practice (see [aws-kubectl-docker hotfix #20](https://github.com/heyvaldemar/aws-kubectl-docker/pull/20)). Keep `push-to-registry: false` — the attestation remains discoverable via GitHub Attestations at `https://github.com/heyvaldemar/<repo>/attestations`.
+   The `push-to-registry: false` is deliberate. The action can push the attestation to the registry as an OCI referrer sidecar, but Docker Hub's OCI referrer credential handoff proved unreliable in practice (see [aws-kubectl-docker hotfix #20](https://github.com/heyvaldemar/aws-kubectl-docker/pull/20)). Keep `push-to-registry: false`. The attestation remains discoverable via GitHub Attestations at `https://github.com/heyvaldemar/<repo>/attestations`.
 
 5. **Cosign keyless signing.** Pin `cosign-installer` to a commit SHA AND pin Cosign itself to v2.6.1 explicitly:
 
@@ -523,7 +523,7 @@ Removed:
        echo "All tags signed successfully"
    ```
 
-   The `set -euo pipefail` plus explicit empty-string guards are intentional. Without them, a partial signing failure can leave the workflow green while only some tags got signed — silent breakage that doesn't surface until a user runs `cosign verify` and gets an error.
+   The `set -euo pipefail` plus explicit empty-string guards are intentional. Without them, a partial signing failure can leave the workflow green while only some tags got signed, silent breakage that doesn't surface until a user runs `cosign verify` and gets an error.
 
 6. **PR-skip discipline.** Every step that requires registry credentials or produces an attestation must be gated with `if: github.event_name != 'pull_request'`:
    - `Login to Docker Hub`
@@ -534,7 +534,7 @@ Removed:
 
    PR builds still run the actual `Build and push` step with `push: false` (a dry-run that validates the build), so a Dockerfile regression caught in PR is the same surface as in main.
 
-7. **`scan-trivy` job** — runs after the build, scans the published digest, uploads SARIF. Skipped on PR builds (the digest doesn't exist in the registry). `continue-on-error: true` so a new CVE disclosure doesn't red-CI ongoing work.
+7. **`scan-trivy` job**: runs after the build, scans the published digest, uploads SARIF. Skipped on PR builds (the digest doesn't exist in the registry). `continue-on-error: true` so a new CVE disclosure doesn't red-CI ongoing work.
 
    ```yaml
    scan-trivy:
@@ -561,7 +561,7 @@ Removed:
            category: trivy
    ```
 
-8. **`dockerhub-description` job** — sync the GitHub README to the Docker Hub repository description on every main push. Empty-string permissions (`permissions: {}`) since the action authenticates via secrets directly.
+8. **`dockerhub-description` job**: sync the GitHub README to the Docker Hub repository description on every main push. Empty-string permissions (`permissions: {}`) since the action authenticates via secrets directly.
 
    ```yaml
    dockerhub-description:
@@ -590,7 +590,7 @@ Removed:
      IMAGE_NAME: heyvaldemar/<image>
    ```
 
-10. **Verify, commit, push, PR.** See [Verification gates → Phase 2](#phase-2-1).
+10. **Verify, commit, push, PR.** See [Verification gates → Phase 2](#phase-2).
 
 ### Commit message template
 
@@ -609,7 +609,7 @@ Jobs:
   (dry-run; signing/attest steps gated to non-PR).
 - scan-trivy — Trivy scan of the published digest, SARIF upload to
   GitHub Security tab. continue-on-error: true so new CVE
-  disclosures don't red-CI ongoing work; the actionable response is
+  disclosures don't red-CI ongoing work; the response you can act on is
   a Dependabot base-image digest bump.
 - dockerhub-description — peter-evans/dockerhub-description sync on
   main pushes only.
@@ -626,7 +626,7 @@ All third-party actions pinned to commit SHA with # vX.Y.Z comment.
 
 ---
 
-## Phase 3 — README rewrite
+## Phase 3: README rewrite
 
 **Goal:** evaluator-first README structured around the image's value proposition, supply chain story, and pinning guidance. Zero affiliate links, zero crypto wallets, zero guru voice.
 
@@ -635,7 +635,7 @@ All third-party actions pinned to commit SHA with # vX.Y.Z comment.
 ### Required sections (in order)
 
 1. **Title + image hero phrase** (one line)
-2. **Badge row** — left-to-right: usage → size → CI → security → supply-chain → legal
+2. **Badge row**: left-to-right: usage → size → CI → security → supply-chain → legal
    ```markdown
    [![Docker Pulls](https://img.shields.io/docker/pulls/heyvaldemar/<image>.svg)](https://hub.docker.com/r/heyvaldemar/<image>)
    [![Docker Image Size](https://img.shields.io/docker/image-size/heyvaldemar/<image>/latest.svg)](https://hub.docker.com/r/heyvaldemar/<image>/tags)
@@ -645,9 +645,9 @@ All third-party actions pinned to commit SHA with # vX.Y.Z comment.
    [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
    ```
 3. **Auto-generated Contents** TOC
-4. **Why this image?** — comparison table against the obvious alternatives (`amazon/aws-cli`, `bitnami/kubectl`, "Alpine + scripts", etc. — pick what's relevant). Same shape as the [aws-kubectl-docker README](https://github.com/heyvaldemar/aws-kubectl-docker#why-this-image). End with a one-paragraph value prop.
-5. **Getting started** — 2-3 concrete `docker run` invocations the reader can paste verbatim. Include `--user "$(id -u):0"` for any volume-mount example since the image runs non-root.
-6. **Pinning guidance** — the section that distinguishes a hardened image from a casual one:
+4. **Why this image?**: comparison table against the obvious alternatives (`amazon/aws-cli`, `bitnami/kubectl`, "Alpine + scripts", etc., pick what's relevant). Same shape as the [aws-kubectl-docker README](https://github.com/heyvaldemar/aws-kubectl-docker#why-this-image). End with a one-paragraph value prop.
+5. **Getting started**: 2-3 concrete `docker run` invocations the reader can paste verbatim. Include `--user "$(id -u):0"` for any volume-mount example since the image runs non-root.
+6. **Pinning guidance**: the section that distinguishes a hardened image from a casual one:
    ```markdown
    For production use, pin to **immutable semver tags**:
 
@@ -658,8 +658,8 @@ All third-party actions pinned to commit SHA with # vX.Y.Z comment.
 
    `docker buildx imagetools inspect heyvaldemar/<image>:X.Y.Z --format '{{.Manifest.Digest}}'`
    ```
-7. **Features** — bullets of what's actually inside the image (binaries, OS, build-time guarantees). Plus a `### Typical use cases` subsection with 3-5 concrete scenarios.
-8. **Supply chain** — the trust statement. Lists every guarantee the image carries:
+7. **Features**: bullets of what's actually inside the image (binaries, OS, build-time guarantees). Plus a `### Typical use cases` subsection with 3-5 concrete scenarios.
+8. **Supply chain**: the trust statement. Lists every guarantee the image carries:
    - Base image pinned by `sha256` digest, Dependabot weekly bump
    - Multi-stage build keeps build-only artefacts out of the published image
    - Checksum-verified payload binaries
@@ -667,8 +667,8 @@ All third-party actions pinned to commit SHA with # vX.Y.Z comment.
    - Hadolint + shellcheck linting in CI
    - All third-party GitHub Actions pinned to commit SHA
    - `VCS_REF` and `BUILD_DATE` stamped into OCI labels
-   - Every published digest is **cosign-signed** via Sigstore keyless OIDC
-   - **SBOM** (SPDX, generated by BuildKit) and **SLSA build provenance** (`provenance: mode=max`) attached to every digest
+   - Every published digest is cosign-signed via Sigstore keyless OIDC
+   - **SBOM** (SPDX, generated by BuildKit) and SLSA build provenance (`provenance: mode=max`) attached to every digest
    - **GitHub native build provenance** at `/attestations`
    - **Trivy** scans on every push; CRITICAL/HIGH fixable findings as SARIF in the Security tab
 
@@ -678,18 +678,18 @@ All third-party actions pinned to commit SHA with # vX.Y.Z comment.
      --certificate-identity-regexp "https://github.com/heyvaldemar/<repo>/.*" \
      --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
    ```
-9. **Tag management** — explains the five tag categories users will see on Docker Hub, what's immutable vs mutable, what gets deleted when:
-   - **Exact semver** (`:X.Y.Z`) — immutable, kept forever
-   - **Rolling semver** (`:X.Y`, `:X`) — mutable, kept forever
-   - **Floating channels** (`:latest`, `:edge`) — mutable, kept forever
+9. **Tag management**: explains the five tag categories users will see on Docker Hub, what's immutable vs mutable, what gets deleted when:
+   - **Exact semver** (`:X.Y.Z`): immutable, kept forever
+   - **Rolling semver** (`:X.Y`, `:X`): mutable, kept forever
+   - **Floating channels** (`:latest`, `:edge`): mutable, kept forever
    - **Custom version pins** (`:<custom-key>-<value>`) if applicable, e.g. `:kube-v1.36.0`
-   - **Short-SHA builds** (`:sha-<7char>`) — immutable, deleted after 90 days
-   - Cosign signatures (`:sha256-<digest>.sig`) — managed by Sigstore, not deleted
+   - **Short-SHA builds** (`:sha-<7char>`): immutable, deleted after 90 days
+   - Cosign signatures (`:sha256-<digest>.sig`): managed by Sigstore, not deleted
 
-   Cross-link this section to **Pinning guidance** so users land on the right tag for production.
-10. **Breaking changes in vX.0** — only if the repo had an existing user base before non-root migration. See the [Optional — Non-root migration](#optional--non-root-migration-breaking-change-for-existing-latest-users) section for what goes here.
-11. **Mounting credentials / volumes** — the `~/.config` → `/home/app/.config` mapping with `--user "$(id -u):0"` so non-root reads host-owned files.
-12. **Build instructions** — `docker build` examples for local single-arch, with build-args, multi-arch via buildx. Build-arg table:
+   Cross-link this section to Pinning guidance so users land on the right tag for production.
+10. **Breaking changes in vX.0**: only if the repo had an existing user base before non-root migration. See the [Optional: Non-root migration](#optional-non-root-migration-breaking-change-for-existing-latest-users) section for what goes here.
+11. **Mounting credentials / volumes**: the `~/.config` → `/home/app/.config` mapping with `--user "$(id -u):0"` so non-root reads host-owned files.
+12. **Build instructions**: `docker build` examples for local single-arch, with build-args, multi-arch via buildx. Build-arg table:
     ```markdown
     | ARG          | Default    | Purpose                                                                  |
     |--------------|------------|--------------------------------------------------------------------------|
@@ -697,10 +697,10 @@ All third-party actions pinned to commit SHA with # vX.Y.Z comment.
     | `BUILD_DATE` | `unknown`  | ISO-8601 timestamp, stamped into `org.opencontainers.image.created`.     |
     | `TARGETARCH` | auto       | Target architecture (`amd64`/`arm64`). Supplied automatically by buildx. |
     ```
-13. **Local Build & Test** — references `scripts/smoke-test.sh`. Optional `<details>` block with one-liner verification commands.
-14. **Security Notes** — short bulleted list (non-root by default, checksum-verified binaries, minimal apt, pin recommendations).
-15. **Run as root (override)** — only if the image runs non-root by default. One-line documentation of `--user 0:0`.
-16. **About the maintainer** — compact footer. Do not duplicate the profile bio:
+13. **Local Build & Test**: references `scripts/smoke-test.sh`. Optional `<details>` block with one-liner verification commands.
+14. **Security Notes**: short bulleted list (non-root by default, checksum-verified binaries, minimal apt, pin recommendations).
+15. **Run as root (override)**: only if the image runs non-root by default. One-line documentation of `--user 0:0`.
+16. **About the maintainer**: compact footer. Do not duplicate the profile bio:
 
     ```markdown
     ---
@@ -758,7 +758,7 @@ Long form. The README is the most user-visible artefact and the rewrite is the m
 
 ---
 
-## Phase 4 — OpenSSF Scorecard
+## Phase 4: OpenSSF scorecard
 
 **Goal:** weekly automated Scorecard run, results published to scorecard.dev viewer, SARIF uploaded to GitHub Security tab, badge in README.
 
@@ -766,7 +766,7 @@ Long form. The README is the most user-visible artefact and the rewrite is the m
 
 ### Steps
 
-1. **Run the helper script** — same one used for Type B repos:
+1. **Run the helper script**: same one used for Type B repos:
 
    ```bash
    $RUNBOOK/scripts/apply-phase-5.sh $TARGET
@@ -774,13 +774,13 @@ Long form. The README is the most user-visible artefact and the rewrite is the m
 
    Drops in `.github/workflows/scorecard.yml` (refuses to overwrite if one exists and prints a diff instead) and echoes the README badge with owner/repo pre-filled from `git remote`.
 
-2. **Add the Scorecard badge to README** — the script prints the exact line. Place it in the badge row after Build Status and before License (security badges before legal).
+2. **Add the Scorecard badge to README**: the script prints the exact line. Place it in the badge row after Build Status and before License (security badges before legal).
 
-3. **Adjust the cron schedule** if you have a Phase-5 tag-cleanup workflow on Mondays at 07:00 UTC (see Phase 5). Default Scorecard cron is Tuesday 06:00 UTC, which lands after the Monday 06:00 UTC publish rebuild and the Monday 07:00 UTC cleanup — keeps the Scorecard score in sync with any weekly change in pinned-dependency posture.
+3. **Adjust the cron schedule** if you have a Phase-5 tag-cleanup workflow on Mondays at 07:00 UTC (see Phase 5). Default Scorecard cron is Tuesday 06:00 UTC, which lands after the Monday 06:00 UTC publish rebuild and the Monday 07:00 UTC cleanup, keeps the Scorecard score in sync with any weekly change in pinned-dependency posture.
 
-4. **Update CHANGELOG** — `[Unreleased] → Added` entry.
+4. **Update CHANGELOG**: `[Unreleased] → Added` entry.
 
-5. **Verify, commit, push, PR.** See [Verification gates → Phase 4](#phase-4-1).
+5. **Verify, commit, push, PR.** See [Verification gates → Phase 4](#phase-4).
 
 ### Commit message template
 
@@ -804,7 +804,7 @@ README: Scorecard badge between Build Status and License.
 
 ---
 
-## Phase 5 — Tag retention + Docker Hub immutability
+## Phase 5: tag retention + Docker Hub immutability
 
 **Goal:** prevent unbounded `sha-*` tag accumulation on Docker Hub via a weekly cleanup workflow, sweep any pre-Phase-1 legacy long-SHA tags via a one-shot script, and make Docker Hub enforce immutability on the tag categories that should never be re-pushed.
 
@@ -812,7 +812,7 @@ README: Scorecard badge between Build Status and License.
 
 ### Steps
 
-1. **Add `.github/workflows/dockerhub-tag-cleanup.yml`** — weekly Monday 07:00 UTC (one hour after the Monday 06:00 UTC publish rebuild, so newly-produced `sha-*` tags older than 90 days get swept the same morning):
+1. **Add `.github/workflows/dockerhub-tag-cleanup.yml`**: weekly Monday 07:00 UTC (one hour after the Monday 06:00 UTC publish rebuild, so newly-produced `sha-*` tags older than 90 days get swept the same morning):
 
    ```yaml
    name: Docker Hub Tag Cleanup
@@ -862,7 +862,7 @@ README: Scorecard badge between Build Status and License.
 
    **Critical filter detail:** the regex must match `sha-*` (the short-SHA tags from CI) but NOT `sha256-*.sig` (cosign signature manifests). They look similar; getting it wrong wipes out all signatures.
 
-2. **Add `scripts/cleanup-legacy-tags.sh`** — one-shot local cleanup for legacy long-SHA tags from the pre-Phase-1 CI era. Dry-run by default; `--execute` requires typed `DELETE` confirmation. The list of target tags is hardcoded in the script so the operation is auditable in version control.
+2. **Add `scripts/cleanup-legacy-tags.sh`**: one-shot local cleanup for legacy long-SHA tags from the pre-Phase-1 CI era. Dry-run by default; `--execute` requires typed `DELETE` confirmation. The list of target tags is hardcoded in the script so the operation is auditable in version control.
 
    ```bash
    #!/usr/bin/env bash
@@ -892,9 +892,9 @@ README: Scorecard badge between Build Status and License.
    ...
    ```
 
-   See [aws-kubectl-docker `scripts/cleanup-legacy-tags.sh`](https://github.com/heyvaldemar/aws-kubectl-docker/blob/main/scripts/cleanup-legacy-tags.sh) for the full script. The `--execute` confirmation is exact-match — typing anything other than `DELETE` aborts.
+   See [aws-kubectl-docker `scripts/cleanup-legacy-tags.sh`](https://github.com/heyvaldemar/aws-kubectl-docker/blob/main/scripts/cleanup-legacy-tags.sh) for the full script. The `--execute` confirmation is exact-match: typing anything other than `DELETE` aborts.
 
-3. **Set the Docker Hub tag immutability policy.** Docker Hub supports a per-repository regex that marks matching tags as immutable (cannot be re-pushed once created). Apply via the Docker Hub UI: **Repository → Settings → Tag immutability rules**. The recommended regex covers exact semver, prefixed semver, short-SHA, and any custom version pins:
+3. **Set the Docker Hub tag immutability policy.** Docker Hub supports a per-repository regex that marks matching tags as immutable (cannot be re-pushed once created). Apply via the Docker Hub UI: Repository → Settings → Tag immutability rules. The recommended regex covers exact semver, prefixed semver, short-SHA, and any custom version pins:
 
    ```
    ^(v?\d+\.\d+\.\d+|sha-[0-9a-f]{7,40}|<custom-prefix>-v?\d+\.\d+\.\d+)$
@@ -906,17 +906,17 @@ README: Scorecard badge between Build Status and License.
    ^(v?\d+\.\d+\.\d+|sha-[0-9a-f]{7,40}|kube-v\d+\.\d+\.\d+)$
    ```
 
-   The `kube-v*` group is a domain-specific pin pattern — adapt for your image (or omit the third clause if you have no custom version pins).
+   The `kube-v*` group is a domain-specific pin pattern. Adapt for your image (or omit the third clause if you have no custom version pins).
 
-   **Critical:** the regex must NOT match `latest`, `edge`, rolling semver (`X.Y`, `X`), or floating channels — those need to be mutable so `:latest` can re-target each main push.
+   **Critical:** the regex must NOT match `latest`, `edge`, rolling semver (`X.Y`, `X`), or floating channels. Those need to be mutable so `:latest` can re-target each main push.
 
-4. **Set Docker Hub categories.** Per-repository setting on Docker Hub (**Repository → General → Categories**) so the image surfaces in browse and search. Pick at most 3 from Docker Hub's category list — e.g., for aws-kubectl-docker: `Operating Systems`, `Languages & Frameworks`, `Integrations & Delivery`.
+4. **Set Docker Hub categories.** Per-repository setting on Docker Hub (Repository → General → Categories) so the image surfaces in browse and search. Pick at most 3 from Docker Hub's category list, e.g., for aws-kubectl-docker: `Operating Systems`, `Languages & Frameworks`, `Integrations & Delivery`.
 
 5. **Enable Docker Scout** (free for public repos) at the repository level on Docker Hub if it isn't already on. Scout's CVE feed is the lowest-friction way for downstream users to see CRITICAL/HIGH findings against the image without running their own Trivy.
 
-6. **Update CHANGELOG** — `[Unreleased] → Added` entries for the cleanup workflow, the legacy-cleanup script, and the immutability policy.
+6. **Update CHANGELOG**: `[Unreleased] → Added` entries for the cleanup workflow, the legacy-cleanup script, and the immutability policy.
 
-7. **Verify, commit, push, PR.** See [Verification gates → Phase 5](#phase-5-1).
+7. **Verify, commit, push, PR.** See [Verification gates → Phase 5](#phase-5).
 
 ### Commit message template
 
@@ -947,7 +947,7 @@ categories. No unbounded sha-* accumulation. Cosign signatures untouched.
 
 ---
 
-## Optional — Non-root migration (BREAKING CHANGE for existing :latest users)
+## Optional: non-root migration (BREAKING CHANGE for existing :latest users)
 
 Apply this when you are about to ship the Phase 0 non-root user switch on a repo that has an existing audience pulling `:latest`.
 
@@ -959,8 +959,8 @@ Apply this when you are about to ship the Phase 0 non-root user switch on a repo
 
 2. **Configure CI to build `:v1-maintenance`** from that branch. The simplest approach: add the branch to the `publish.yml` `on.push.branches` list. The branch gets the same weekly rebuild + cosign signing + Trivy scan as `main`.
 
-3. **Document a sunset date.** Convention: 90 days from the v2.0 release. After that the branch is frozen — no further rebuilds. State this in:
-   - `SECURITY.md` "Supported Versions" table — mark `v1-maintenance` with the explicit end-of-support date.
+3. **Document a sunset date.** Convention: 90 days from the v2.0 release. After that the branch is frozen: no further rebuilds. State this in:
+   - `SECURITY.md` "Supported Versions" table: mark `v1-maintenance` with the explicit end-of-support date.
    - `CHANGELOG.md` `[2.0.0]` entry under `BREAKING CHANGES`.
    - README "Breaking Changes in vX.0" section.
 
@@ -997,13 +997,13 @@ Apply this when you are about to ship the Phase 0 non-root user switch on a repo
 
 ### Why a 90-day window
 
-90 days is enough time for downstream consumers to encounter the breaking change in their own CI cycles, file an issue, and migrate. It's short enough to not become a permanent maintenance liability — `v1-maintenance` requires its own weekly rebuilds and new CVEs accumulate against the older base. The hard cutoff is documented up front so users budget the migration; nobody is surprised on day 91.
+90 days is enough time for downstream consumers to encounter the breaking change in their own CI cycles, file an issue, and migrate. It's short enough to not become a permanent maintenance liability. `v1-maintenance` requires its own weekly rebuilds and new CVEs accumulate against the older base. The hard cutoff is documented up front so users budget the migration; nobody is surprised on day 91.
 
 ---
 
-## Optional — Architecture Decision Records
+## Optional: architecture decision records
 
-Same pattern as the Type B runbook. See [`RUNBOOK.md` → Optional — Architecture Decision Records (flagship repos)](RUNBOOK.md#optional--architecture-decision-records-flagship-repos) for when, why, and how. The ADR template at [`templates/ADR.md.tmpl`](templates/ADR.md.tmpl) is shared between both runbooks.
+Same pattern as the Type B runbook. See [`RUNBOOK.md` → Optional: Architecture Decision Records (flagship repos)](RUNBOOK.md#optional--architecture-decision-records-flagship-repos) for when, why, and how. The ADR template at [`templates/ADR.md.tmpl`](templates/ADR.md.tmpl) is shared between both runbooks.
 
 Topics worth recording for image-publishing repos:
 
@@ -1012,7 +1012,7 @@ Topics worth recording for image-publishing repos:
 - Why UID 10001 specifically (not 1000, not 65534)?
 - Why GID 0 instead of a dedicated runtime group?
 - Why Cosign v2.6.1 instead of v3.x today?
-- Why `attest-build-provenance` with `push-to-registry: false` — capture the Docker Hub OCI referrer credential handoff history.
+- Why `attest-build-provenance` with `push-to-registry: false`: capture the Docker Hub OCI referrer credential handoff history.
 - Why ship `unzip` (or any other "carried for backwards compatibility" binary) in the final image?
 
 Pick 2-3 whose "why" is least obvious to a drive-by reader.
@@ -1021,7 +1021,7 @@ Pick 2-3 whose "why" is least obvious to a drive-by reader.
 
 ## Verification gates
 
-Run these checks after each phase, before merging. Hard gates — if a check fails, fix before merge.
+Run these checks after each phase, before merging. Hard gates: if a check fails, fix before merge.
 
 ### Phase 0
 
@@ -1180,7 +1180,7 @@ test -x scripts/cleanup-legacy-tags.sh
 grep -c 'MODE="${1:---dry-run}"' scripts/cleanup-legacy-tags.sh  # expected: 1
 grep -c '"DELETE"' scripts/cleanup-legacy-tags.sh  # expected: confirmation present
 
-# Docker Hub immutability policy applied (manual UI step — verify by attempting a no-op re-push of an immutable tag; should be rejected)
+# Docker Hub immutability policy applied (manual UI step, verify by attempting a no-op re-push of an immutable tag; should be rejected)
 # expected: HTTP 400 from Docker Hub if tag immutability matches
 ```
 
@@ -1188,19 +1188,19 @@ grep -c '"DELETE"' scripts/cleanup-legacy-tags.sh  # expected: confirmation pres
 
 ## Common pitfalls
 
-### Pitfall 1 — Cosign v2 vs v3 storage divergence
+### Pitfall 1: cosign v2 vs v3 storage divergence
 
-`cosign-installer@v4` defaults to Cosign **v3.x**. Cosign v3 changed container signature storage to OCI 1.1 referring artifacts. Docker Hub's OCI referrer credential handoff is unreliable in practice — a workflow that signs successfully in CI can leave signatures unverifiable for downstream users.
+`cosign-installer@v4` defaults to Cosign v3.x. Cosign v3 changed container signature storage to OCI 1.1 referring artifacts. Docker Hub's OCI referrer credential handoff is unreliable in practice. A workflow that signs successfully in CI can leave signatures unverifiable for downstream users.
 
 **Pin Cosign to `v2.6.1`** explicitly via `cosign-release: "v2.6.1"`. Cosign v2 keeps tag-based `.sig` storage which works reliably on Docker Hub today. Full Cosign v3 migration is deferred until Docker Hub's OCI referrer handoff stabilizes.
 
-### Pitfall 2 — `attest-build-provenance` push-to-registry
+### Pitfall 2: `attest-build-provenance` push-to-registry
 
 Same root cause as Pitfall 1. `actions/attest-build-provenance` can push the attestation to the registry as an OCI referrer sidecar via `push-to-registry: true`, but Docker Hub's OCI referrer credential handoff fails silently in some cases.
 
 **Set `push-to-registry: false`.** The attestation remains discoverable via GitHub Attestations at `https://github.com/heyvaldemar/<repo>/attestations`.
 
-### Pitfall 3 — `flavor: latest=false` is mandatory once tag immutability is enabled
+### Pitfall 3: `flavor: latest=false` is mandatory once tag immutability is enabled
 
 By default, `docker/metadata-action` retags `:latest` on every successful build, including semver-tag pushes. Once Phase 5's Docker Hub tag immutability policy is in place, the second push of `:latest` from a semver tag run conflicts with whatever was pushed by the previous main-branch run, and the entire publish job fails.
 
@@ -1216,13 +1216,13 @@ tags: |
 
 This was the root cause of [aws-kubectl-docker hotfix #32](https://github.com/heyvaldemar/aws-kubectl-docker/pull/32).
 
-### Pitfall 4 — Annotated tag SHA vs commit SHA
+### Pitfall 4: annotated tag SHA vs commit SHA
 
-Same as Type B Pitfall 1. `sigstore/cosign-installer`, `actions/attest-build-provenance`, `ossf/scorecard-action`, and `github/codeql-action` all use **annotated tags**. Pinning their tag-object SHA causes Scorecard's imposter-commit check to reject the workflow.
+Same as Type B Pitfall 1. `sigstore/cosign-installer`, `actions/attest-build-provenance`, `ossf/scorecard-action`, and `github/codeql-action` all use annotated tags. Pinning their tag-object SHA causes Scorecard's imposter-commit check to reject the workflow.
 
 **Use `scripts/dereference-github-tag.sh`** for every action pin. It handles both annotated and lightweight tags transparently.
 
-### Pitfall 5 — Cosign signing without `set -euo pipefail`
+### Pitfall 5: cosign signing without `set -euo pipefail`
 
 The naive cosign signing loop:
 
@@ -1250,7 +1250,7 @@ run: |
   done
 ```
 
-### Pitfall 6 — Tag cleanup regex matching cosign signatures
+### Pitfall 6: tag cleanup regex matching cosign signatures
 
 The cleanup workflow's filter is:
 
@@ -1258,21 +1258,21 @@ The cleanup workflow's filter is:
 .[] | select(.name | startswith("sha-")) | select(.last_updated < $cutoff)
 ```
 
-This intentionally matches `sha-1234567` (short-SHA build tags) but NOT `sha256-abcd1234.sig` (cosign signature manifests). They both start with `sha`, but the prefix `sha-` is exact — `sha256-*` has a different prefix.
+This intentionally matches `sha-1234567` (short-SHA build tags) but NOT `sha256-abcd1234.sig` (cosign signature manifests). They both start with `sha`, but the prefix `sha-` is exact. `sha256-*` has a different prefix.
 
 **Test the filter on a non-prod repo before deploying.** A bad regex that matches `sha256-*.sig` wipes every signature on the repo in one workflow run. Cosign signatures are reproducible (re-sign by re-running the publish workflow), but the recovery is several hours of CI time.
 
-### Pitfall 7 — Docker Hub `short-description` truncation
+### Pitfall 7: Docker Hub `short-description` truncation
 
 `peter-evans/dockerhub-description` accepts a `short-description` of any length, but Docker Hub silently truncates it past ~100 characters. The web UI shows the truncation; the API doesn't.
 
 **Keep `short-description` under 100 chars.** Test by visiting the Docker Hub repo page after the first sync and verifying the full description shows.
 
-### Pitfall 8 — `unzip` (or any other "carried for backwards compatibility" binary) in the final image
+### Pitfall 8: `unzip` (or any other "carried for backwards compatibility" binary) in the final image
 
-Multi-stage builds tempt you to delete every build-time tool from the final image. Sometimes that breaks unrelated user workflows that relied on the tool being present at runtime — e.g. an `unzip` invocation in a downstream CI script, even though the image's primary purpose has nothing to do with zip files.
+Multi-stage builds tempt you to delete every build-time tool from the final image. Sometimes that breaks unrelated user workflows that relied on the tool being present at runtime, e.g. an `unzip` invocation in a downstream CI script, even though the image's primary purpose has nothing to do with zip files.
 
-**Decide explicitly per binary** whether it stays in the final image and document the decision in a comment in the Dockerfile and (if user-impacting) in the CHANGELOG. Removing a long-bundled binary is a BREAKING CHANGE — pair it with a deprecation notice on a previous release.
+**Decide explicitly per binary** whether it stays in the final image and document the decision in a comment in the Dockerfile and (if user-impacting) in the CHANGELOG. Removing a long-bundled binary is a BREAKING CHANGE. Pair it with a deprecation notice on a previous release.
 
 Example from aws-kubectl-docker:
 
@@ -1282,9 +1282,9 @@ Example from aws-kubectl-docker:
 # ad-hoc zip extraction in CI/CD pipelines.
 ```
 
-### Pitfall 9 — `sha-*` tag immutability vs scheduled rebuilds
+### Pitfall 9: `sha-*` tag immutability vs scheduled rebuilds
 
-Same root cause as Pitfall 3 (`flavor: latest=false`), different tag. The `sha-*` rule emitted by `docker/metadata-action` re-emits the same `sha-<X>` on every event type, including `schedule` and `workflow_dispatch`. The weekly cron from Phase 2 is meant to rebuild against fresher base layers — which produces a different image manifest digest for the same source SHA. Pushing to `sha-<X>` then fails with HTTP 403 against the Docker Hub immutability policy from Phase 5:
+Same root cause as Pitfall 3 (`flavor: latest=false`), different tag. The `sha-*` rule emitted by `docker/metadata-action` re-emits the same `sha-<X>` on every event type, including `schedule` and `workflow_dispatch`. The weekly cron from Phase 2 is meant to rebuild against fresher base layers, which produces a different image manifest digest for the same source SHA. Pushing to `sha-<X>` then fails with HTTP 403 against the Docker Hub immutability policy from Phase 5:
 
 ```
 ERROR: failed to push <image>:sha-0546ce8: denied: requested access to the resource is denied
@@ -1292,7 +1292,7 @@ ERROR: failed to push <image>:sha-0546ce8: denied: requested access to the resou
 due to immutability settings.
 ```
 
-The build-and-push step exits 1, which short-circuits the rest of the job — `attest-build-provenance`, cosign install, cosign sign, and Trivy scan all skip. CI goes red on cron without any human change to the repo.
+The build-and-push step exits 1, which short-circuits the rest of the job: `attest-build-provenance`, cosign install, cosign sign, and Trivy scan all skip. CI goes red on cron without any human change to the repo.
 
 The collision surfaces the first time a cron run lands on a stale source SHA after the immutability policy was applied. Earlier cron runs that landed within hours of a fresh main push didn't trigger it because the source SHA was new each time.
 
@@ -1308,14 +1308,14 @@ Behavior after the fix:
 |---|---|---|---|
 | Push to main / push tag | ✅ | ✅ | New source SHA → fresh tag, no collision |
 | Pull request | ✅ | ❌ (`push: false`) | Tag list completeness only |
-| Schedule (weekly cron) | ❌ | — | Only re-tag mutable `:latest` and `:edge` with rebuilt image |
-| `workflow_dispatch` | ❌ | — | Manual rebuild without source change; if source did change, push instead |
+| Schedule (weekly cron) | ❌ | - | Only re-tag mutable `:latest` and `:edge` with rebuilt image |
+| `workflow_dispatch` | ❌ | - | Manual rebuild without source change; if source did change, push instead |
 
-The "first push of a source SHA owns the immutable `sha-*` tag forever" semantic is preserved — which is the property downstream consumers depend on when pinning by `sha-*`.
+The "first push of a source SHA owns the immutable `sha-*` tag forever" semantic is preserved, which is the property downstream consumers depend on when pinning by `sha-*`.
 
 **Why not just disable tag immutability?** Immutability is the whole point of the `sha-*` pin: a downstream consumer that pinned `:sha-XYZ` should get byte-identical content forever. Allowing re-push of `sha-XYZ` with different content silently invalidates that contract.
 
-**Why not delete and re-push?** Same problem at one remove — the `sha-*` pin loses its "pin to first build" semantic.
+**Why not delete and re-push?** Same problem at one remove: the `sha-*` pin loses its "pin to first build" semantic.
 
 **Same family of bug as Pitfall 3 and `kube-v*`.** `docker/metadata-action`'s default emission rules don't account for tag immutability. Each rule that emits an immutable-category tag needs an explicit `enable=` predicate matching the events where re-push is safe. When you add the immutability policy in Phase 5, audit every tag rule in `metadata-action` and add the predicate.
 
@@ -1329,18 +1329,18 @@ Per repo, expect:
 
 | Phase | Hours | Automation potential |
 |---|---|---|
-| 0 — Dockerfile hardening | 1.5–3 | Low (per-image binary inventory differs) |
-| 1 — Community files + smoke test | 0.5–1 | **High** (`scripts/apply-phase-1.sh`) |
-| 2 — CI publish workflow | 2–4 | Medium (workflow shape is identical, but per-image build-args and binary list need adapting) |
-| 3 — README rewrite | 2–3 | Medium (skeleton template + per-image fills) |
-| 4 — OpenSSF Scorecard | 0.1–0.25 | **High** (`scripts/apply-phase-5.sh`) |
-| 5 — Tag retention + immutability | 1–2 | Medium (workflow is drop-in, immutability regex needs per-image adaptation, Docker Hub UI step is manual) |
-| Optional — Non-root migration | 1–2 (only if needed) | Low (per-repo audience analysis) |
-| **Total** | **~7–13 h** for a fresh repo | — |
+| 0: Dockerfile hardening | 1.5-3 | Low (per-image binary inventory differs) |
+| 1: Community files + smoke test | 0.5-1 | **High** (`scripts/apply-phase-1.sh`) |
+| 2: CI publish workflow | 2-4 | Medium (workflow shape is identical, but per-image build-args and binary list need adapting) |
+| 3: README rewrite | 2-3 | Medium (skeleton template + per-image fills) |
+| 4: OpenSSF Scorecard | 0.1-0.25 | **High** (`scripts/apply-phase-5.sh`) |
+| 5: Tag retention + immutability | 1-2 | Medium (workflow is drop-in, immutability regex needs per-image adaptation, Docker Hub UI step is manual) |
+| Optional: Non-root migration | 1-2 (only if needed) | Low (per-repo audience analysis) |
+| **Total** | **~7-13 h** for a fresh repo | - |
 
 First-time application against `aws-kubectl-docker` took ~25–30 hours of design work across multiple PRs in 2026-04 (the v2.0 release cycle). With this runbook + the included templates and helper scripts, subsequent image-publishing repos should take ~7–10 hours of focused work.
 
-### Phasing guidance — which subset to apply
+### Phasing guidance: which subset to apply
 
 | Tier | Pulls / week | Active? | Phases to apply |
 |---|---|---|---|
@@ -1349,4 +1349,4 @@ First-time application against `aws-kubectl-docker` took ~25–30 hours of desig
 | Long tail | <1K | Infrequent | 0–4 (skip Scorecard + retention; revisit if pulls grow) |
 | Dormant | Any | No push in >2 years | Archive instead of harden |
 
-Pull counts are easily checked via `docker pull` count on Docker Hub. The thresholds are heuristics — adjust based on whether the image has external production users or is a personal tool.
+Pull counts are easily checked via `docker pull` count on Docker Hub. The thresholds are heuristics. Adjust based on whether the image has external production users or is a personal tool.

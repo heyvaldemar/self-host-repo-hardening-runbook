@@ -1,21 +1,21 @@
-# The Runbook — Step by Step
+# The Runbook: Step by Step
 
 Eight phases. One PR each. Merge between phases so CI stays green and history is readable.
 
-This is the runbook for **Compose-stack repos** (e.g. [`<service>-traefik-letsencrypt-docker-compose`](https://github.com/heyvaldemar/keycloak-traefik-letsencrypt-docker-compose)). For **image-publishing repos** (e.g. [`aws-kubectl-docker`](https://github.com/heyvaldemar/aws-kubectl-docker)) see the companion [`IMAGE-PUBLISHING-RUNBOOK.md`](IMAGE-PUBLISHING-RUNBOOK.md).
+This is the runbook for Compose-stack repos (e.g. [`<service>-traefik-letsencrypt-docker-compose`](https://github.com/heyvaldemar/keycloak-traefik-letsencrypt-docker-compose)). For image-publishing repos (e.g. [`aws-kubectl-docker`](https://github.com/heyvaldemar/aws-kubectl-docker)) see the companion [`IMAGE-PUBLISHING-RUNBOOK.md`](IMAGE-PUBLISHING-RUNBOOK.md).
 
 ## Contents
 
 - [Pre-flight (once per repo)](#pre-flight-once-per-repo)
-- [Phase 0 — Security audit + .env hygiene](#phase-0--security-audit--env-hygiene)
-- [Phase 1 — Community files + scaffolding](#phase-1--community-files--scaffolding)
-- [Phase 2 — CI workflow hardening](#phase-2--ci-workflow-hardening)
-- [Phase 3 — Upstream image digest pinning](#phase-3--upstream-image-digest-pinning)
-- [Phase 4 — README rewrite](#phase-4--readme-rewrite)
-- [Phase 5 — OpenSSF Scorecard](#phase-5--openssf-scorecard)
-- [Phase 6 — CI linting + upstream image scanning](#phase-6--ci-linting--upstream-image-scanning)
-- [Phase 7 — Container security context + resource limits](#phase-7--container-security-context--resource-limits)
-- [Optional — Architecture Decision Records (flagship repos)](#optional--architecture-decision-records-flagship-repos)
+- [Phase 0: Security audit + .env hygiene](#phase-0-security-audit--env-hygiene)
+- [Phase 1: Community files + scaffolding](#phase-1-community-files--scaffolding)
+- [Phase 2: CI workflow hardening](#phase-2-ci-workflow-hardening)
+- [Phase 3: Upstream image digest pinning](#phase-3-upstream-image-digest-pinning)
+- [Phase 4: README rewrite](#phase-4-readme-rewrite)
+- [Phase 5: OpenSSF Scorecard](#phase-5-openssf-scorecard)
+- [Phase 6: CI linting + upstream image scanning](#phase-6-ci-linting--upstream-image-scanning)
+- [Phase 7: Container security context + resource limits](#phase-7-container-security-context--resource-limits)
+- [Optional: Architecture Decision Records (flagship repos)](#optional-architecture-decision-records-flagship-repos)
 - [Verification gates](#verification-gates)
 - [Common pitfalls](#common-pitfalls)
 
@@ -32,7 +32,7 @@ cd <service>-traefik-letsencrypt-docker-compose
 git status
 git branch --show-current
 
-# Get the first-commit year — you'll need it for LICENSE
+# Get the first-commit year, you'll need it for LICENSE
 git log --reverse --format=%ai | head -1 | cut -d- -f1
 
 # Read the current state. Look for:
@@ -50,11 +50,11 @@ find .github -type f
 head -5 README.md
 ```
 
-Record upstream image tags from the compose file — you'll pin them in Phase 3.
+Record upstream image tags from the compose file. You'll pin them in Phase 3.
 
 ---
 
-## Phase 0 — Security audit + .env hygiene
+## Phase 0: Security audit + .env hygiene
 
 **Goal:** remove any credentials committed to git. Replace with placeholder `.env.example`. Make compose fail fast when required vars are missing.
 
@@ -68,12 +68,12 @@ Record upstream image tags from the compose file — you'll pin them in Phase 3.
    ```
    Anything that looks like a password, hash, API key, or admin credential → must be rotated and removed from the tracked file.
 
-2. **Create `.env.example`** (see `templates/deployment-verification.yml.tmpl` — actually the `.env.example` structure is in Phase 3 below; use the one from [keycloak `.env.example`](https://github.com/heyvaldemar/keycloak-traefik-letsencrypt-docker-compose/blob/main/.env.example) as the shape reference). Key requirements:
+2. **Create `.env.example`** (see `templates/deployment-verification.yml.tmpl`, actually the `.env.example` structure is in Phase 3 below; use the one from [keycloak `.env.example`](https://github.com/heyvaldemar/keycloak-traefik-letsencrypt-docker-compose/blob/main/.env.example) as the shape reference). Key requirements:
    - Image tags as real values (not secrets).
    - Each credential variable as `change_me_*` placeholder.
    - Inline comment above each credential with the generation command:
      ```
-     # REQUIRED — generate with:
+     # REQUIRED, generate with:
      #     openssl rand -base64 24 | tr -d '/+=' | head -c 32
      RCON_PASSWORD=change_me_before_first_start
      ```
@@ -86,19 +86,19 @@ Record upstream image tags from the compose file — you'll pin them in Phase 3.
 4. **Append `.env` to `.gitignore`:**
    ```
    ### Project-specific ###
-   # Environment file — contains secrets. Users copy .env.example → .env
+   # Environment file, contains secrets. Users copy .env.example → .env
    # locally and fill in real values. Never commit the real .env.
    .env
    ```
 
-5. **Update docker-compose.yml — add `:?error` syntax to required vars:**
+5. **Update docker-compose.yml: add `:?error` syntax to required vars:**
    ```yaml
    environment:
      POSTGRES_PASSWORD: ${DB_PASSWORD:?set in .env - see .env.example}
    ```
-   Note: the error message **must not contain colons** — YAML parses them as mapping separators.
+   Note: the error message must not contain colons. YAML parses them as mapping separators.
 
-6. **Update any CI workflow that depends on `.env`** — generate ephemeral values:
+6. **Update any CI workflow that depends on `.env`**: generate ephemeral values:
    ```yaml
    - name: Generate test .env with ephemeral credentials
      run: |
@@ -109,7 +109,7 @@ Record upstream image tags from the compose file — you'll pin them in Phase 3.
        EOF
    ```
 
-7. **Update the README** — one paragraph change:
+7. **Update the README**: one paragraph change:
    ```markdown
    ❗ Copy `.env.example` to `.env` and set `<required vars>` before first start.
 
@@ -118,7 +118,7 @@ Record upstream image tags from the compose file — you'll pin them in Phase 3.
    > committed defaults should rotate those credentials immediately.
    ```
 
-8. **Verify**, commit, push, PR. See [Verification gates → Phase 0](#phase-0-1).
+8. **Verify**, commit, push, PR. See [Verification gates → Phase 0](#phase-0).
 
 ### Commit message template
 
@@ -148,7 +148,7 @@ their production credentials.
 
 ---
 
-## Phase 1 — Community files + scaffolding
+## Phase 1: community files + scaffolding
 
 **Goal:** `LICENSE`, `SECURITY.md`, `CHANGELOG.md`, upgraded Dependabot config, `FUNDING.yml` removed.
 
@@ -156,7 +156,7 @@ their production credentials.
 
 ### Steps
 
-1. **Run the helper script** — handles all file copies with auto-derived substitutions (year range, repo name, first-commit year), preserves existing SECURITY.md / CHANGELOG.md if present, and `git rm`s `FUNDING.yml`:
+1. **Run the helper script**: handles all file copies with auto-derived substitutions (year range, repo name, first-commit year), preserves existing SECURITY.md / CHANGELOG.md if present, and `git rm`s `FUNDING.yml`:
 
    ```bash
    RUNBOOK=~/repos/self-host-repo-hardening-runbook
@@ -166,11 +166,11 @@ their production credentials.
    ```
 
    The script leaves the working tree dirty for review. Expected post-run state:
-   - `LICENSE` — `{{YEAR_RANGE}}` substituted to `<first-commit-year>-<current-year>`.
-   - `SECURITY.md` — drop-in copy with `{{SUPPORTED_VERSIONS_NOTE}}`, `{{UPSTREAM_IMAGES}}`, `{{HISTORICAL_ISSUE_OR_OMIT}}` placeholders left for manual fill.
-   - `CHANGELOG.md` — `{{REPO}}`, `{{SERVICE}}`, `{{FIRST_COMMIT_YEAR}}` auto-substituted; `{{UNRELEASED_ENTRIES_OR_PLACEHOLDER}}` and `{{YEAR_SPAN_MINOR}}` marked for manual fill.
-   - `.github/dependabot.yml` — drop-in copy (new version: grouping + docker ecosystem).
-   - `.github/FUNDING.yml` — removed via `git rm` if it existed.
+   - `LICENSE`: `{{YEAR_RANGE}}` substituted to `<first-commit-year>-<current-year>`.
+   - `SECURITY.md`: drop-in copy with `{{SUPPORTED_VERSIONS_NOTE}}`, `{{UPSTREAM_IMAGES}}`, `{{HISTORICAL_ISSUE_OR_OMIT}}` placeholders left for manual fill.
+   - `CHANGELOG.md`: `{{REPO}}`, `{{SERVICE}}`, `{{FIRST_COMMIT_YEAR}}` auto-substituted; `{{UNRELEASED_ENTRIES_OR_PLACEHOLDER}}` and `{{YEAR_SPAN_MINOR}}` marked for manual fill.
+   - `.github/dependabot.yml`: drop-in copy (new version: grouping + docker ecosystem).
+   - `.github/FUNDING.yml`: removed via `git rm` if it existed.
 
 2. **Fill remaining placeholders** in `SECURITY.md` and `CHANGELOG.md` (the content-dependent ones the script can't derive). Grep for `{{` to find them all:
    ```bash
@@ -188,7 +188,7 @@ their production credentials.
    test -f $TARGET/.github/FUNDING.yml && (cd $TARGET && git rm .github/FUNDING.yml)
    ```
 
-4. **Verify**, commit, push, PR. See [Verification gates → Phase 1](#phase-1-1).
+4. **Verify**, commit, push, PR. See [Verification gates → Phase 1](#phase-1).
 
 ### Commit message template
 
@@ -214,7 +214,7 @@ Removed:
 
 ---
 
-## Phase 2 — CI workflow hardening
+## Phase 2: CI workflow hardening
 
 **Goal:** pinned SHAs, per-job permissions, timeouts, concurrency, weekly cron, no-prefix filenames.
 
@@ -228,7 +228,7 @@ Removed:
           .github/workflows/deployment-verification.yml
    ```
 
-2. **Apply hardening template** — use `templates/deployment-verification.yml.tmpl` as the starting point. Preserve all the repo-specific `env:` block values (NETWORK names, hostnames, compose filename, project name).
+2. **Apply hardening template**: use `templates/deployment-verification.yml.tmpl` as the starting point. Preserve all the repo-specific `env:` block values (NETWORK names, hostnames, compose filename, project name).
 
 3. **Pin every `uses:` line to a commit SHA** with a `# vX.Y.Z` comment. Use `scripts/dereference-github-tag.sh`:
    ```bash
@@ -236,14 +236,14 @@ Removed:
    # → actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
    ```
 
-   **Critical:** some actions (notably `ossf/scorecard-action` and `github/codeql-action`) use **annotated tags** where `gh api /git/refs/tags/vX.Y.Z` returns a tag-object SHA. Scorecard's own imposter-commit check rejects tag-object SHAs. Use the dereference script — it handles this transparently.
+   **Critical: some actions (notably `ossf/scorecard-action` and `github/codeql-action`) use annotated tags** where `gh api /git/refs/tags/vX.Y.Z` returns a tag-object SHA. Scorecard's own imposter-commit check rejects tag-object SHAs. Use the dereference script. It handles this transparently.
 
 4. **Update README badge URL** if the workflow was renamed:
    ```
    https://github.com/<owner>/<repo>/actions/workflows/deployment-verification.yml/badge.svg?branch=main
    ```
 
-5. **Verify**, commit, push, PR. See [Verification gates → Phase 2](#phase-2-1).
+5. **Verify**, commit, push, PR. See [Verification gates → Phase 2](#phase-2).
 
 ### Commit message template
 
@@ -269,7 +269,7 @@ Changes:
 
 ---
 
-## Phase 3 — Upstream image digest pinning
+## Phase 3: upstream image digest pinning
 
 **Goal:** pin every upstream image reference to `tag@sha256:...` so Dependabot can auto-open weekly bump PRs.
 
@@ -292,19 +292,19 @@ Changes:
    ```
    The script auto-detects Docker Hub (`library/...`), Quay.io, and GHCR.
 
-3. **Update `.env.example`** — append `@sha256:<digest>` to each image tag:
+3. **Update `.env.example`**: append `@sha256:<digest>` to each image tag:
    ```diff
    - TRAEFIK_IMAGE_TAG=traefik:3.2
    + TRAEFIK_IMAGE_TAG=traefik:3.2@sha256:e561a37f8710d9cf41c78bdf421d822b2c0b48267ec0552e644565fb55466ea9
    ```
    Also update the comment above each variable to mention Dependabot auto-bump:
    ```
-   # <Service> image — pinned by tag + sha256 digest for reproducible deployments.
+   # <Service> image, pinned by tag + sha256 digest for reproducible deployments.
    # Dependabot's `docker` ecosystem auto-opens a PR weekly when the upstream
    # digest changes.
    ```
 
-4. **Update CI workflow's ephemeral `.env` heredoc** — use the same digest-pinned values:
+4. **Update CI workflow's ephemeral `.env` heredoc**: use the same digest-pinned values:
    ```yaml
    cat > .env <<EOF
    TRAEFIK_IMAGE_TAG=traefik:3.2@sha256:e561a37f...
@@ -312,7 +312,7 @@ Changes:
    EOF
    ```
 
-5. **Update CHANGELOG** — document the digest pins in `[Unreleased] → Changed`.
+5. **Update CHANGELOG**: document the digest pins in `[Unreleased] → Changed`.
 
 6. **Verify**:
    ```bash
@@ -321,7 +321,7 @@ Changes:
      -f <compose-file> config | grep "image:"
    ```
 
-7. **Commit, push, PR.** See [Verification gates → Phase 3](#phase-3-1).
+7. **Commit, push, PR.** See [Verification gates → Phase 3](#phase-3).
 
 ### Commit message template
 
@@ -347,7 +347,7 @@ No change to the compose file itself — it already uses ${VAR} references.
 
 ---
 
-## Phase 4 — README rewrite
+## Phase 4: README rewrite
 
 **Goal:** evaluator-first structure. Zero affiliate links, zero guru voice, zero crypto wallets. Preserve operationally valuable content (Backups, Restore, etc.).
 
@@ -361,19 +361,19 @@ No change to the compose file itself — it already uses ${VAR} references.
    ```
 
 2. **Fill the placeholders** (in order of appearance):
-   - `{{TITLE}}` — "Keycloak + Traefik + Let's Encrypt — Docker Compose"
-   - `{{SERVICE}}` — main service name (e.g. Keycloak, Nextcloud, Zabbix)
-   - `{{SHORT_DESCRIPTION}}` — one-paragraph opener about what the stack is
-   - `{{BLOG_LINK}}` — blog post URL if one exists
-   - `{{COMPARISON_TABLE}}` — Why-this-stack table; service-specific row content, standard column headers
-   - `{{FEATURES_LIST}}` — 8-12 bullets of what's in the stack
-   - `{{USE_CASES}}` — 3-5 concrete scenarios (homelab, small team, dev sandbox, enterprise starting point, etc.)
-   - `{{UPSTREAM_IMAGES}}` — 2-4 links (Docker Hub / Quay.io / GHCR) for images the stack orchestrates
-   - `{{PRODUCTION_CHECKLIST}}` — 5-8 boxes; copy the Keycloak checklist shape and adapt per service
-   - `{{OPS_CONTENT}}` — preserved Backups / Restore / Upgrade sections from the prior README; cleaned up prose but same functionality
-   - `{{SECURITY_NOTES_BULLETS}}` — 4-6 bullets; include pre-rotation advisory if Phase 0 found committed credentials
+   - `{{TITLE}}`: "Keycloak + Traefik + Let's Encrypt: Docker Compose"
+   - `{{SERVICE}}`: main service name (e.g. Keycloak, Nextcloud, Zabbix)
+   - `{{SHORT_DESCRIPTION}}`: one-paragraph opener about what the stack is
+   - `{{BLOG_LINK}}`: blog post URL if one exists
+   - `{{COMPARISON_TABLE}}`: Why-this-stack table; service-specific row content, standard column headers
+   - `{{FEATURES_LIST}}`: 8-12 bullets of what's in the stack
+   - `{{USE_CASES}}`: 3-5 concrete scenarios (homelab, small team, dev sandbox, enterprise starting point, etc.)
+   - `{{UPSTREAM_IMAGES}}`: 2-4 links (Docker Hub / Quay.io / GHCR) for images the stack orchestrates
+   - `{{PRODUCTION_CHECKLIST}}`: 5-8 boxes; copy the Keycloak checklist shape and adapt per service
+   - `{{OPS_CONTENT}}`: preserved Backups / Restore / Upgrade sections from the prior README; cleaned up prose but same functionality
+   - `{{SECURITY_NOTES_BULLETS}}`: 4-6 bullets; include pre-rotation advisory if Phase 0 found committed credentials
 
-3. **Strip the legacy content** — the pre-hardening README typically has:
+3. **Strip the legacy content**: the pre-hardening README typically has:
    - "hey everyone" / "cutting my teeth" / "super detailed (seriously, they're foolproof!)" / "I'm stoked" / "Let's do this together!"
    - "My 2D Portfolio" (sre.gg), "My Courses" (Udemy affiliate), "My Services", "Patreon Exclusives"
    - "My Recommendations" kit.co affiliate links
@@ -384,7 +384,7 @@ No change to the compose file itself — it already uses ${VAR} references.
    - "Show some 💜 by starring" + octocat GIF
    - Footer SVG
 
-   All of it → **delete**. The compact `About the maintainer` footer from the skeleton replaces it.
+   All of it → delete. The compact `About the maintainer` footer from the skeleton replaces it.
 
 4. **Verify** no legacy strings remain:
    ```bash
@@ -392,15 +392,15 @@ No change to the compose file itself — it already uses ${VAR} references.
    # Expected: 0
    ```
 
-5. **Commit, push, PR.** See [Verification gates → Phase 4](#phase-4-1).
+5. **Commit, push, PR.** See [Verification gates → Phase 4](#phase-4).
 
 ### Commit message template
 
-Long form — the README rewrite is the most substantive PR. Use the [keycloak PR #16 commit message](https://github.com/heyvaldemar/keycloak-traefik-letsencrypt-docker-compose/pull/16) as the shape template.
+Long form: the README rewrite is the most substantive PR. Use the [keycloak PR #16 commit message](https://github.com/heyvaldemar/keycloak-traefik-letsencrypt-docker-compose/pull/16) as the shape template.
 
 ---
 
-## Phase 5 — OpenSSF Scorecard
+## Phase 5: OpenSSF scorecard
 
 **Goal:** weekly automated Scorecard run, results published to scorecard.dev viewer, SARIF uploaded to GitHub Security tab, badge in README.
 
@@ -408,25 +408,25 @@ Long form — the README rewrite is the most substantive PR. Use the [keycloak P
 
 ### Steps
 
-1. **Run the helper script** — drops in `.github/workflows/scorecard.yml` (refuses to overwrite if one exists and prints a diff instead) and echoes the README badge with owner/repo pre-filled from `git remote`:
+1. **Run the helper script**: drops in `.github/workflows/scorecard.yml` (refuses to overwrite if one exists and prints a diff instead) and echoes the README badge with owner/repo pre-filled from `git remote`:
 
    ```bash
    $RUNBOOK/scripts/apply-phase-5.sh $TARGET
    ```
 
-2. **Add the Scorecard badge to README** — between Deployment Verification and License badges (the script prints the exact line with owner/repo filled in):
+2. **Add the Scorecard badge to README**: between Deployment Verification and License badges (the script prints the exact line with owner/repo filled in):
    ```markdown
    [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/<owner>/<repo>/badge)](https://scorecard.dev/viewer/?uri=github.com/<owner>/<repo>)
    ```
 
-3. **Update CHANGELOG** — `[Unreleased] → Added` entry.
+3. **Update CHANGELOG**: `[Unreleased] → Added` entry.
 
 4. **(Optional) Run the manual fallback** if the script isn't available:
    ```bash
    cp $RUNBOOK/templates/scorecard.yml $TARGET/.github/workflows/scorecard.yml
    ```
 
-5. **Verify**, commit, push, PR. See [Verification gates → Phase 5](#phase-5-1).
+5. **Verify**, commit, push, PR. See [Verification gates → Phase 5](#phase-5).
 
 ### Commit message template
 
@@ -451,7 +451,7 @@ README: Scorecard badge between Deployment Verification and License.
 
 ---
 
-## Phase 6 — CI linting + upstream image scanning
+## Phase 6: CI linting + upstream image scanning
 
 **Goal:** add a `lint` job (shellcheck + actionlint) and a `scan-trivy` job (matrix × N upstream images with SARIF upload to the GitHub Security tab). Closes the remaining CI gap between deployment-template repos and the image-publishing reference (`aws-kubectl-docker`). After this phase, `deployment-verification.yml` matches the `publish.yml` shape modulo cosign/SBOM/SLSA steps that don't apply to repos that don't publish their own image.
 
@@ -461,18 +461,18 @@ README: Scorecard badge between Deployment Verification and License.
 
 | Job | Deps | Parallel with | Blocks merge? |
 |---|---|---|---|
-| `lint` | — | — | ✅ yes |
-| `scan-trivy` (matrix × N) | — | `deploy-and-test` | ❌ `continue-on-error: true` |
+| `lint` | - | - | ✅ yes |
+| `scan-trivy` (matrix × N) | - | `deploy-and-test` | ❌ `continue-on-error: true` |
 | `deploy-and-test` | `lint` | `scan-trivy` | ✅ yes |
 
 ### Steps
 
-1. **Add `lint` job** — blocking, 5-minute timeout:
-   - `shellcheck` on every `*.sh` in the repo root via `koalaman/shellcheck-alpine:stable`. Direct docker image invocation — one less supply-chain layer to pin than a wrapping GitHub Action.
+1. **Add `lint` job**: blocking, 5-minute timeout:
+   - `shellcheck` on every `*.sh` in the repo root via `koalaman/shellcheck-alpine:stable`. Direct docker image invocation: one less supply-chain layer to pin than a wrapping GitHub Action.
    - `actionlint` on every workflow YAML via `rhysd/actionlint:1.7.12`. Catches typos, invalid step references, and GitHub Actions footguns the YAML parser doesn't catch. actionlint itself is a single Go binary.
 
-2. **Add `scan-trivy` job** — matrix × N upstream images, 10-minute timeout, `continue-on-error: true`, `fail-fast: false`. Per image:
-   - `aquasecurity/trivy-action@<sha> # v0.35.0` with `severity: CRITICAL,HIGH`, `ignore-unfixed: true` (CVEs without an upstream fix aren't actionable for a template repo).
+2. **Add `scan-trivy` job**: matrix × N upstream images, 10-minute timeout, `continue-on-error: true`, `fail-fast: false`. Per image:
+   - `aquasecurity/trivy-action@<sha> # v0.35.0` with `severity: CRITICAL,HIGH`, `ignore-unfixed: true` (a CVE with no upstream fix cannot be acted on in a template repo).
    - `github/codeql-action/upload-sarif@<sha> # v4.35.2` (matches `scorecard.yml` pin) with `category: trivy-<name>` so each image's findings surface under a distinct Security-tab category.
    - Permissions: `security-events: write` for the SARIF upload.
 
@@ -495,9 +495,9 @@ README: Scorecard badge between Deployment Verification and License.
    deploy-and-test:
      needs: lint
    ```
-   CI fails fast on shellcheck/actionlint errors before burning the 15-minute compose-up slot. `scan-trivy` stays parallel — Trivy findings don't gate deployment (actionable response is a Dependabot digest bump, not a forced re-run).
+   CI fails fast on shellcheck/actionlint errors before burning the 15-minute compose-up slot. `scan-trivy` stays parallel. Trivy findings don't gate deployment (the response is a Dependabot digest bump, not a forced re-run).
 
-4. **Resolve intentional shellcheck false positives.** If the deploy job uses `timeout 5m bash -c '...$VAR...'` for HTTP smoke checks, shellcheck flags SC2016 on the single-quoted `$VAR`. The deferred expansion is intentional — the inner `bash -c` inherits the job-level `env:`. Add explicit directives immediately before the offending line:
+4. **Resolve intentional shellcheck false positives.** If the deploy job uses `timeout 5m bash -c '...$VAR...'` for HTTP smoke checks, shellcheck flags SC2016 on the single-quoted `$VAR`. The deferred expansion is intentional: the inner `bash -c` inherits the job-level `env:`. Add explicit directives immediately before the offending line:
 
    ```yaml
    - name: Wait for the application to be ready via Traefik
@@ -512,9 +512,9 @@ README: Scorecard badge between Deployment Verification and License.
        done'
    ```
 
-   The directive must be on the line **immediately preceding** the `timeout` invocation — shellcheck scopes inline disables to the next non-comment line.
+   The directive must be on the line immediately preceding the `timeout` invocation: shellcheck scopes inline disables to the next non-comment line.
 
-5. **Update CHANGELOG** — `[Unreleased] → Changed` block documenting both new jobs.
+5. **Update CHANGELOG**: `[Unreleased] → Changed` block documenting both new jobs.
 
 6. **Verify locally before pushing:**
    ```bash
@@ -530,7 +530,7 @@ README: Scorecard badge between Deployment Verification and License.
    python3 -c "import yaml; yaml.safe_load(open('.github/workflows/deployment-verification.yml'))"
    ```
 
-7. **Commit, push, PR.** See [Verification gates → Phase 6](#phase-6-1).
+7. **Commit, push, PR.** See [Verification gates → Phase 6](#phase-6).
 
 ### Commit message template
 
@@ -550,7 +550,7 @@ New jobs:
 - scan-trivy — matrix × N upstream images (<list>),
   continue-on-error: true, parallel to deploy-and-test. Per-image
   SARIF upload under `trivy-<name>` categories in the Security
-  tab. Findings don't block deployment — the actionable response
+  tab. Findings don't block deployment — the response you can act on
   is a Dependabot digest bump (separate PR flow).
 
 Also: placed `# shellcheck disable=SC2016` directives with
@@ -561,14 +561,14 @@ expansion is intentional — inner bash inherits the job-level env.
 
 ### Design decisions worth recording in the PR body
 
-- **Why `continue-on-error: true` on `scan-trivy`?** A hard block would cause red CI on every new CVE disclosure — CVEs land against upstream images on a cadence the maintainer doesn't control. The actionable response is a Dependabot digest bump, already its own PR flow. Security-tab findings surface for triage; they don't gate deployment.
-- **Why `needs: lint` on `deploy-and-test` but not on `scan-trivy`?** Lint errors mean the CI itself is structurally broken. Trivy findings are about upstream images — they're not a reason to skip CI for our own changes.
+- **Why `continue-on-error: true` on `scan-trivy`?** A hard block would cause red CI on every new CVE disclosure. CVEs land against upstream images on a cadence the maintainer doesn't control. The response is a Dependabot digest bump, already its own PR flow. Security-tab findings surface for triage; they don't gate deployment.
+- **Why `needs: lint` on `deploy-and-test` but not on `scan-trivy`?** Lint errors mean the CI itself is structurally broken. Trivy findings are about upstream images. They're not a reason to skip CI for our own changes.
 - **Why direct docker image invocation for shellcheck/actionlint, not a wrapping GitHub Action?** One less SHA to pin, review, and rotate via Dependabot. The two docker images are single-binary and pinned to specific tags.
 - **Why matrix of N entries instead of one script that scans all N?** Each image gets its own job log, its own SARIF file, and its own Security-tab category. A CVE in `postgres` shouldn't show up under the `<service>` category. `fail-fast: false` means one image scan failing doesn't block the others.
 
 ---
 
-## Phase 7 — Container security context + resource limits
+## Phase 7: container security context + resource limits
 
 **Goal:** harden each service in the compose file with a non-permissive Linux security context (`security_opt`, `cap_drop`, `read_only`) and explicit memory + CPU ceilings. Reduces blast radius if a service is compromised; prevents a single misbehaving container from starving the host.
 
@@ -604,7 +604,7 @@ expansion is intentional — inner bash inherits the job-level env.
        - <service>-data:/var/lib/<service>:rw  # persistent state stays writable
    ```
 
-   Enabling `read_only` on a service that writes to unexpected paths breaks startup with `EROFS`. Stage incrementally: enable on one service, verify, then move to the next. See [Pitfall 8](#pitfall-8--read_only-true--unexpected-writable-paths) for the most common failure mode and how to debug it.
+   Enabling `read_only` on a service that writes to unexpected paths breaks startup with `EROFS`. Stage incrementally: enable on one service, verify, then move to the next. See [Pitfall 8](#pitfall-8-read_only-true--unexpected-writable-paths) for the most common failure mode and how to debug it.
 
 4. **Add memory and CPU ceilings via `deploy.resources.limits`** (Compose v3+) or `mem_limit:` / `cpus:` (Compose v2 syntax, also accepted by Docker Compose CLI). Without limits, one runaway container can OOM-kill the rest of the stack and the host:
 
@@ -617,25 +617,25 @@ expansion is intentional — inner bash inherits the job-level env.
            cpus: "1.5"
    ```
 
-   Sizing rule of thumb: start with **2× observed steady-state** under realistic load, then revisit after a week of metrics. Reasonable defaults for a small Compose stack:
+   Sizing rule of thumb: start with 2× observed steady-state under realistic load, then revisit after a week of metrics. Reasonable defaults for a small Compose stack:
    - Application service (e.g. Keycloak, Nextcloud): `1g` memory, `1.5` CPU
    - Postgres: `512m` memory, `1` CPU
    - Traefik: `256m` memory, `0.5` CPU
    - Backup sidecar: `256m` memory, `0.25` CPU
 
-   Do not omit the limit on the backup sidecar — `pg_dump` of a large database can balloon memory if the dump pipe stalls.
+   Do not omit the limit on the backup sidecar: `pg_dump` of a large database can balloon memory if the dump pipe stalls.
 
 5. **(Optional) Add `pids_limit: <N>`** to bound process count per container. Mitigates fork-bomb-class denial of service. Reasonable defaults: `200` for most services, `500` for Postgres.
 
-6. **(Optional) Add `user: "<uid>:<gid>"`** if the upstream image supports it. Many official images already define a non-root user — confirm with:
+6. **(Optional) Add `user: "<uid>:<gid>"`** if the upstream image supports it. Many official images already define a non-root user: confirm with:
 
    ```bash
    docker run --rm <upstream-image> id
    ```
 
-   If `id` returns a non-root UID, set `user: "<uid>:<gid>"` in the compose file to match. If `id` returns `uid=0(root)`, skip — running an upstream image as a non-default user often breaks because the image's ENTRYPOINT writes to paths owned by root. Document the upstream's user-handling in a comment on the service.
+   If `id` returns a non-root UID, set `user: "<uid>:<gid>"` in the compose file to match. If `id` returns `uid=0(root)`, skip: running an upstream image as a non-default user often breaks because the image's ENTRYPOINT writes to paths owned by root. Document the upstream's user-handling in a comment on the service.
 
-7. **Healthchecks coverage.** Verify every long-running service has a healthcheck. Phase 0 establishes the broad pattern, but the cross-repo audit revealed healthchecks are not always uniformly applied — especially on backup sidecars. Pattern:
+7. **Healthchecks coverage.** Verify every long-running service has a healthcheck. Phase 0 establishes the broad pattern, but the cross-repo audit revealed healthchecks are not always uniformly applied, especially on backup sidecars. Pattern:
 
    ```yaml
    service:
@@ -671,9 +671,9 @@ expansion is intentional — inner bash inherits the job-level env.
    # MEM USAGE should report against the configured limit, not host total
    ```
 
-9. **Update CHANGELOG** — `[Unreleased] → Changed` with a compact summary of what changed per service.
+9. **Update CHANGELOG**: `[Unreleased] → Changed` with a compact summary of what changed per service.
 
-10. **Commit, push, PR.** See [Verification gates → Phase 7](#phase-7-1).
+10. **Commit, push, PR.** See [Verification gates → Phase 7](#phase-7).
 
 ### Commit message template
 
@@ -699,17 +699,17 @@ verification job.
 
 ### Why the trade-off is worth it
 
-Without these settings, a single compromised service has full Linux capabilities, a writable rootfs, no UID isolation, and no resource ceiling. Most container-escape CVE chains require one of those four to land. Tightening all four is roughly 30 minutes of work per service after the first one — and the first one is the slowest because you discover the upstream image's actual runtime path needs.
+Without these settings, a single compromised service has full Linux capabilities, a writable rootfs, no UID isolation, and no resource ceiling. Most container-escape CVE chains require one of those four to land. Tightening all four is roughly 30 minutes of work per service after the first one, and the first one is the slowest because you discover the upstream image's actual runtime path needs.
 
-The trade-off is brittleness: an upstream image change that adds a new write path silently breaks the read-only mount until you patch the compose. Track this via the weekly Deployment Verification cron — if a healthcheck starts failing after a Dependabot digest bump, the new path is the likely culprit.
+The trade-off is brittleness: an upstream image change that adds a new write path silently breaks the read-only mount until you patch the compose. Track this via the weekly Deployment Verification cron: if a healthcheck starts failing after a Dependabot digest bump, the new path is the likely culprit.
 
 ---
 
-## Optional — Architecture Decision Records (flagship repos)
+## Optional: architecture decision records (flagship repos)
 
-**When to apply:** flagship repositories (20+ stars, active maintenance). Skip for long-tail repos — they're unnecessary overhead there.
+**When to apply:** flagship repositories (20+ stars, active maintenance). Skip for long-tail repos. They're unnecessary overhead there.
 
-**Why:** the deployment-template README answers *"how do I deploy this?"*. ADRs answer *"why was it built this way?"* — which is what architecture-evaluators ask first. Two or three ADRs per flagship repo is enough; the effort is ~30 minutes per record.
+**Why:** the deployment-template README answers *"how do I deploy this?"*. ADRs answer *"why was it built this way?"*, which is what architecture-evaluators ask first. Two or three ADRs per flagship repo is enough; the effort is ~30 minutes per record.
 
 ### Steps
 
@@ -724,7 +724,7 @@ The trade-off is brittleness: an upstream image change that adds a new write pat
    # e.g. docs/adr/0001-traefik-over-nginx.md
    ```
 
-3. **Fill in** `{{NNNN}}`, `{{TITLE}}`, `{{YYYY-MM-DD}}`, and the Context / Decision / Alternatives / Consequences sections. Keep each ADR under one page — if the decision needs more context, extract a separate design doc and link to it from the ADR's References section.
+3. **Fill in** `{{NNNN}}`, `{{TITLE}}`, `{{YYYY-MM-DD}}`, and the Context / Decision / Alternatives / Consequences sections. Keep each ADR under one page: if the decision needs more context, extract a separate design doc and link to it from the ADR's References section.
 
 ### What to document (typical topics)
 
@@ -735,7 +735,7 @@ The trade-off is brittleness: an upstream image change that adds a new write pat
 - Why the specific backup strategy (on-host volume + `pg_dump` gz) over alternatives?
 - Why basic-auth on the Traefik dashboard over forward-auth / IP allowlist?
 
-Not every flagship repo needs all six — pick the 2-3 decisions whose "why" is least obvious to a drive-by reader.
+Not every flagship repo needs all six: pick the 2-3 decisions whose "why" is least obvious to a drive-by reader.
 
 ### Commit message template
 
@@ -754,7 +754,7 @@ Format: Michael Nygard (Context / Decision / Alternatives / Consequences).
 
 ## Verification gates
 
-Run these checks after each phase, before merging. Each is a hard gate — if it fails, fix before merge.
+Run these checks after each phase, before merging. Each is a hard gate: if it fails, fix before merge.
 
 ### Phase 0
 
@@ -767,7 +767,7 @@ git ls-files | grep -E '^\.env\.example$'  # expected: .env.example
 
 # compose fails fast without required vars
 docker compose --env-file /dev/null -f <compose-file> config 2>&1 | grep -i "required variable"
-# expected: matches — means :? enforcement works
+# expected: matches, means :? enforcement works
 
 # CI workflow no longer depends on committed .env
 grep -c "cat > .env" .github/workflows/*.yml  # expected: 1 (the ephemeral-.env heredoc)
@@ -801,7 +801,7 @@ print('OK — both ecosystems present')
 ```bash
 # All uses: lines have commit-SHA pins with # comment
 grep -E "uses:" .github/workflows/*.yml | grep -v '@[0-9a-f]\{40\}.*#.*v'
-# expected: empty — no unpinned or comment-less uses
+# expected: empty, no unpinned or comment-less uses
 
 # Per-job permissions present
 grep -c "permissions:" .github/workflows/deployment-verification.yml
@@ -872,7 +872,7 @@ grep -E "koalaman/shellcheck-alpine:stable" .github/workflows/deployment-verific
 grep -E "rhysd/actionlint:[0-9]+\.[0-9]+\.[0-9]+" .github/workflows/deployment-verification.yml
 # expected: both match
 
-# actionlint passes locally — same check CI will run
+# actionlint passes locally, same check CI will run
 docker run --rm -v "$PWD:/mnt" -w /mnt rhysd/actionlint:1.7.12 -color
 # expected: exit 0, no output
 
@@ -894,7 +894,7 @@ for e in matrix:
     assert '@sha256:' in e['image'], f'entry missing digest pin: {e}'
 print(f'OK — {len(matrix)} digest-pinned images in scan-trivy matrix')
 EOF
-# expected: OK — N images
+# expected: OK, N images
 
 # deploy-and-test blocks on lint
 python3 -c "
@@ -973,9 +973,9 @@ docker compose -f <compose-file> down
 
 ## Common pitfalls
 
-### Pitfall 1 — Annotated tag SHA vs commit SHA
+### Pitfall 1: annotated tag SHA vs commit SHA
 
-GitHub's `/git/refs/tags/vX.Y.Z` API returns the SHA of whatever the ref points at. For **lightweight tags**, that's a commit SHA. For **annotated tags**, that's a *tag object* SHA — which then points at the commit.
+GitHub's `/git/refs/tags/vX.Y.Z` API returns the SHA of whatever the ref points at. For lightweight tags, that's a commit SHA. For annotated tags, that's a *tag object* SHA, which then points at the commit.
 
 Scorecard's own imposter-commit check rejects tag-object SHAs. Pin a tag-object SHA and Scorecard refuses to publish results.
 
@@ -999,9 +999,9 @@ Scorecard's own imposter-commit check rejects tag-object SHAs. Pin a tag-object 
 - `aquasecurity/trivy-action`
 - `peter-evans/dockerhub-description`
 
-**Use `scripts/dereference-github-tag.sh`** — it handles both cases transparently.
+**Use `scripts/dereference-github-tag.sh`**: it handles both cases transparently.
 
-### Pitfall 2 — Colons in docker-compose `${VAR:?error}` messages
+### Pitfall 2: colons in docker-compose `${VAR:?error}` messages
 
 Compose error messages inside `${VAR:?message}` can't contain colons (YAML parser interprets them as mapping separators). Write messages like:
 
@@ -1015,7 +1015,7 @@ Not:
 ${VAR:?KEYCLOAK_DB_PASSWORD: generate via openssl rand: see .env.example}
 ```
 
-### Pitfall 3 — Badge order matters
+### Pitfall 3: badge order matters
 
 Recommended badge order (left-to-right):
 
@@ -1027,9 +1027,9 @@ For image-publishing repos add `Docker Pulls | Image Size | Cosign Verified` bet
 
 Putting License first or last is conventional (CNCF repos use last). Security badges before legal.
 
-### Pitfall 4 — `.env.example` as placeholder vs as canonical config
+### Pitfall 4: `.env.example` as placeholder vs as canonical config
 
-`.env.example` should ship **real, non-secret values** for things like image tags and URLs, but **`change_me_*` placeholders** for credentials. Not:
+`.env.example` should ship real, non-secret values for things like image tags and URLs, but **`change_me_*` placeholders** for credentials. Not:
 
 ```
 # Good
@@ -1038,20 +1038,20 @@ KEYCLOAK_ADMIN_PASSWORD=change_me_before_first_start
 ```
 
 ```
-# Bad — no default image, forces extra research
+# Bad, no default image, forces extra research
 KEYCLOAK_IMAGE_TAG=change_me_see_quay_io
 ```
 
 ```
-# Bad — placeholder credential can silently ship to prod
+# Bad, placeholder credential can silently ship to prod
 KEYCLOAK_ADMIN_PASSWORD=admin123
 ```
 
 The entrypoint / compose `${VAR:?}` enforcement catches the `change_me_*` case at runtime.
 
-### Pitfall 5 — `git filter-repo` for credential vacuuming
+### Pitfall 5: `git filter-repo` for credential vacuuming
 
-If you find tracked credentials in Phase 0, the question is whether to rewrite git history. **Default answer: no.**
+If you find tracked credentials in Phase 0, the question is whether to rewrite git history. Default answer: no.
 
 - Force-pushing rewritten history breaks every existing fork and local clone.
 - Old committed values are cached in every mirror (GitHub, GH Archive, forks).
@@ -1061,7 +1061,7 @@ If you find tracked credentials in Phase 0, the question is whether to rewrite g
 
 Use `git filter-repo` only if (a) the credential is still in active use somewhere hard to rotate, or (b) you have a disclosure obligation (e.g., GDPR-protected data was accidentally committed). Neither usually applies to homelab self-host templates.
 
-### Pitfall 6 — shellcheck SC2016 on intentional `bash -c` deferred expansion
+### Pitfall 6: shellcheck SC2016 on intentional `bash -c` deferred expansion
 
 The deployment-verification template uses this pattern for HTTP smoke checks:
 
@@ -1069,9 +1069,9 @@ The deployment-verification template uses this pattern for HTTP smoke checks:
 timeout 5m bash -c 'while ! curl -fsSLk "https://$APP_HOSTNAME"; do ...'
 ```
 
-The single-quoted `$APP_HOSTNAME` is deliberate: the outer shell must **not** expand it; the inner `bash -c` expands it against the job-level `env:` block it inherits. Expanding in the outer shell would work today but couples the string literal to the env-setup order, and actionlint/shellcheck warnings accumulate on every CI PR.
+The single-quoted `$APP_HOSTNAME` is deliberate: the outer shell must not expand it; the inner `bash -c` expands it against the job-level `env:` block it inherits. Expanding in the outer shell would work today but couples the string literal to the env-setup order, and actionlint/shellcheck warnings accumulate on every CI PR.
 
-shellcheck flags this as SC2016 ("Expressions don't expand in single quotes, use double quotes for that."). The fix is to add the disable directive **immediately before** the `timeout` line, with a comment explaining why:
+shellcheck flags this as SC2016 ("Expressions don't expand in single quotes, use double quotes for that."). The fix is to add the disable directive immediately before the `timeout` line, with a comment explaining why:
 
 ```yaml
 # $APP_HOSTNAME is intentionally expanded by the inner bash -c
@@ -1082,11 +1082,11 @@ timeout 5m bash -c 'while ! curl -fsSLk "https://$APP_HOSTNAME"; do
 done'
 ```
 
-**Common failure mode:** placing the disable directive somewhere else (e.g., at the top of the `run:` block) — shellcheck scopes inline disables to the *next non-comment line*, so an out-of-position directive doesn't silence the warning.
+**Common failure mode:** placing the disable directive somewhere else (e.g., at the top of the `run:` block): shellcheck scopes inline disables to the *next non-comment line*, so an out-of-position directive doesn't silence the warning.
 
-### Pitfall 7 — Dependabot `docker` ecosystem doesn't auto-bump `.env.example` digests
+### Pitfall 7: Dependabot `docker` ecosystem doesn't auto-bump `.env.example` digests
 
-Dependabot's `docker` ecosystem scans `Dockerfile` and `docker-compose.yml` for literal `image: <ref>` strings. It **does not** expand `${VAR}` references, so digest pins stored as:
+Dependabot's `docker` ecosystem scans `Dockerfile` and `docker-compose.yml` for literal `image: <ref>` strings. It does not expand `${VAR}` references, so digest pins stored as:
 
 ```
 # .env.example
@@ -1102,7 +1102,7 @@ services:
     image: ${TRAEFIK_IMAGE_TAG}
 ```
 
-...are invisible to Dependabot. Phase 3's digest pinning works for reproducibility but the weekly auto-bump PR that Phase 3's commit message promises **won't fire** for digests living in env files.
+...are invisible to Dependabot. Phase 3's digest pinning works for reproducibility but the weekly auto-bump PR that Phase 3's commit message promises won't fire for digests living in env files.
 
 **Workarounds (pick one):**
 
@@ -1112,7 +1112,7 @@ services:
 
 The keycloak reference implementation currently accepts manual rotation. Revisit if digest drift causes recurring CI failures.
 
-### Pitfall 8 — `read_only: true` + unexpected writable paths
+### Pitfall 8: `read_only: true` + unexpected writable paths
 
 Enabling `read_only` on a service breaks startup if the upstream image writes to a path you didn't anticipate. Symptom: container exits immediately with logs containing `Read-only file system` or `EROFS`.
 
@@ -1120,11 +1120,11 @@ Approach: enable `read_only` on one service at a time. After `docker compose up 
 
 Common writable paths upstream images expect:
 
-- `/tmp` — almost always needed
-- `/run`, `/var/run` — process state, sockets
-- `/var/lib/<service>` — persistent state (use a named volume, not tmpfs)
-- `/var/log/<service>` — service logs (tmpfs is acceptable if you don't ship logs to a file)
-- Service-specific cache dirs — Keycloak writes to `/opt/keycloak/data/tmp` and similar; check the upstream image's docs.
+- `/tmp`: almost always needed
+- `/run`, `/var/run`: process state, sockets
+- `/var/lib/<service>`: persistent state (use a named volume, not tmpfs)
+- `/var/log/<service>`: service logs (tmpfs is acceptable if you don't ship logs to a file)
+- Service-specific cache dirs: Keycloak writes to `/opt/keycloak/data/tmp` and similar; check the upstream image's docs.
 
 Post-change verification:
 
@@ -1133,23 +1133,23 @@ docker inspect <container> --format '{{ .HostConfig.ReadonlyRootfs }}'
 # expected: true
 ```
 
-If the service comes up green but `ReadonlyRootfs` reports `false`, your compose change didn't take effect — re-check indentation. `read_only` is a per-service top-level key, not nested under `deploy:`.
+If the service comes up green but `ReadonlyRootfs` reports `false`, your compose change didn't take effect: re-check indentation. `read_only` is a per-service top-level key, not nested under `deploy:`.
 
 ---
 
 ## Rollout strategy
 
-After the first repo (keycloak) takes ~10-12 hours for Phases 0–5 plus ~1 hour for Phase 6 plus ~1.5 hours for Phase 7, the second should take ~7 hours end-to-end. By the fifth repo it's 4–5 hours each. The compounding factor is fluency — the first time you resolve three digests for the compose file is slow; the tenth time is a 30-second script invocation. Phase 7 stays per-repo costly because the read-only mount and resource-limit decisions are service-specific and don't fully template.
+After the first repo (keycloak) takes ~10-12 hours for Phases 0-5 plus ~1 hour for Phase 6 plus ~1.5 hours for Phase 7, the second should take ~7 hours end-to-end. By the fifth repo it's 4-5 hours each. The compounding factor is fluency: the first time you resolve three digests for the compose file is slow; the tenth time is a 30-second script invocation. Phase 7 stays per-repo costly because the read-only mount and resource-limit decisions are service-specific and don't fully template.
 
 Recommended rollout order (highest-impact first):
 
-1. Top 3–5 by stars — keycloak ✓, nextcloud, zabbix, gitlab, gitea
-2. Next tier 6–15 — outline, minecraft, rocketchat, jira, grafana, ollama, confluence, vaultwarden, mattermost, ghost
-3. Long tail — everything else. Consider archiving repos with <5 stars + no push in >2 years instead of hardening them.
+1. Top 3-5 by stars: keycloak ✓, nextcloud, zabbix, gitlab, gitea
+2. Next tier 6-15: outline, minecraft, rocketchat, jira, grafana, ollama, confluence, vaultwarden, mattermost, ghost
+3. Long tail: everything else. Consider archiving repos with <5 stars + no push in >2 years instead of hardening them.
 
-Maintain the first 5 actively (merge Dependabot PRs weekly). The long tail can be tier-2 — apply this runbook's Phase 0–2 only (security + community + CI hardening) and skip Phases 3–7 on repos that don't warrant the ongoing Dependabot / Scorecard / Trivy-triage maintenance.
+Maintain the first 5 actively (merge Dependabot PRs weekly). The long tail can be tier-2: apply this runbook's Phase 0-2 only (security + community + CI hardening) and skip Phases 3-7 on repos that don't warrant the ongoing Dependabot / Scorecard / Trivy-triage maintenance.
 
-### Phasing guidance — which subset to apply
+### Phasing guidance: which subset to apply
 
 | Tier | Stars | Active? | Phases to apply |
 |---|---|---|---|

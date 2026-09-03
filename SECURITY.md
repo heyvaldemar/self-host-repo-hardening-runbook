@@ -1,19 +1,19 @@
 # Security Policy
 
-This repository publishes a **runbook** (documentation) and a set of **templates** and **helper scripts**. There is no deployed service, no packaged binary, and no image published from this repo.
+This repository publishes a runbook (documentation) and a set of templates and helper scripts. There is no deployed service, no packaged binary, and no image published from this repo.
 
-## Supported Versions
+## Supported versions
 
 | Version | Status |
 |---------|--------|
 | Latest `main` | :white_check_mark: |
 | Older | Superseded by latest; pin a specific commit if you want a stable reference |
 
-## Reporting a Vulnerability
+## Reporting a vulnerability
 
-Send reports to **v@valdemar.ai**. Encrypted email is preferred — the PGP public key is published at [heyvaldemar.com/security](https://heyvaldemar.com/security).
+Send reports to v@valdemar.ai. Encrypted email is preferred: the PGP public key is published at [heyvaldemar.com/security](https://heyvaldemar.com/security).
 
-You can expect an acknowledgment within **7 days**. This project does not operate a bounty program.
+You can expect an acknowledgment within 7 days. This project does not operate a bounty program.
 
 Please do not open public GitHub issues for security reports.
 
@@ -27,7 +27,7 @@ Valid:
 
 Out of scope:
 
-- Security issues in the target repositories that apply this runbook — those belong in each repo's own SECURITY.md.
+- Security issues in the target repositories that apply this runbook: those belong in each repo's own SECURITY.md.
 - Security issues in upstream tooling (Docker, Traefik, Keycloak, GitHub Actions).
 
 ## Helper scripts integrity
