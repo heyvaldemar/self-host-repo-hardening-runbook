@@ -175,6 +175,8 @@ See [`SECURITY.md`](SECURITY.md) for the vulnerability disclosure process.
 
 ---
 
+## About the maintainer
+
 <div align="center">
 
 **Maintained by [Vladimir Mikhalev](https://github.com/heyvaldemar)** · Docker Captain · IBM Champion · AWS Community Builder
