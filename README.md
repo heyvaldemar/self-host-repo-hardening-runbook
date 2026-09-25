@@ -3,6 +3,7 @@
 Documented engineering standards and repeatable phase-by-phase programs for bringing public heyvaldemar repositories up to a supply-chain-hardened baseline matching [heyvaldemar/keycloak-traefik-letsencrypt-docker-compose](https://github.com/heyvaldemar/keycloak-traefik-letsencrypt-docker-compose) and [heyvaldemar/aws-kubectl-docker](https://github.com/heyvaldemar/aws-kubectl-docker).
 
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/heyvaldemar/self-host-repo-hardening-runbook/badge)](https://scorecard.dev/viewer/?uri=github.com/heyvaldemar/self-host-repo-hardening-runbook)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/14914/badge)](https://www.bestpractices.dev/projects/14914)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Which runbook do I need?
