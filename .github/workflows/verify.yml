@@ -33,3 +33,25 @@ jobs:
       - name: actionlint
         run: |
           docker run --rm -v "$PWD:/mnt" -w /mnt rhysd/actionlint:1.7.12 -color
+
+  test:
+    name: Test what the scripts promise, and show the tests each violation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: ShellCheck
+        run: shellcheck scripts/*.sh tests/*.sh
+
+      # The network and GitHub replaced by fakes, the target repositories made
+      # in a temporary directory: no token, no registry, nothing written
+      # outside the runner.
+      - name: The scripts' tests
+        run: ./tests/test-scripts.sh
+
+      # A test that cannot fail is not a test: each promise is broken on a
+      # copy, and the run fails if the tests stay green.
+      - name: The tests, shown each violation they exist for
+        run: python3 tests/plant-violations.py -- ./tests/test-scripts.sh

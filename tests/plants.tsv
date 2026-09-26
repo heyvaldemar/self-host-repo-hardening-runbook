@@ -1,0 +1,10 @@
+# file	old	new	what the tests must notice
+"scripts/dereference-github-tag.sh"	"if [ \"$OBJ_TYPE\" = \"tag\" ]; then"	"if false; then"	"an annotated tag pinned by its tag-object SHA, which Scorecard rejects"
+"scripts/resolve-image-digest.sh"	"REPO_PATH=\"library/${REPO}\""	"REPO_PATH=\"${REPO}\""	"bare names looked up outside Docker Hub's library"
+"scripts/resolve-image-digest.sh"	"  TAG=\"latest\""	"  TAG=\"\""	"no tag no longer means latest"
+"scripts/resolve-image-digest.sh"	"  -H \"Accept: application/vnd.oci.image.index.v1+json\" \\\n"	""	"one platform's manifest asked for instead of the multi-arch index"
+"scripts/resolve-image-digest.sh"	"if [ -z \"$DIGEST\" ]; then"	"if false; then"	"an empty digest printed as if it were one"
+"scripts/apply-phase-1.sh"	"YEAR_RANGE=\"${FIRST_YEAR}-${CURRENT_YEAR}\""	"YEAR_RANGE=\"${CURRENT_YEAR}\""	"the licence loses the year the work began"
+"scripts/apply-phase-1.sh"	"if [[ -f CHANGELOG.md ]]; then"	"if false; then"	"an existing CHANGELOG overwritten"
+"scripts/apply-phase-5.sh"	"if [[ -f \"$DEST\" ]]; then"	"if false; then"	"an existing scorecard.yml overwritten"
+"templates/scorecard.yml"	"uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6"	"uses: actions/checkout@v6"	"a template action pinned by tag instead of commit"

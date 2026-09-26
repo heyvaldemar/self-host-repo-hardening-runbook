@@ -162,6 +162,15 @@ The image-publishing runbook does not yet ship a `Dockerfile.tmpl` or `publish.y
 
 The `audits/` directory captures point-in-time compliance snapshots of the reference implementations against the runbook standard. Each audit is dated and lists HIGH/MEDIUM/LOW findings plus remediation order. Useful when a reference repo and the runbook diverge. The audit pins the exact gap and the work needed to close it.
 
+## Testing
+
+The scripts are tested, not just linted. [`tests/test-scripts.sh`](tests/test-scripts.sh) runs each one with the network and GitHub replaced by fakes on `PATH` and its target repositories made in a temporary directory, so it needs no token and touches nothing real: an annotated tag resolves to its commit rather than to the tag object Scorecard rejects; an image reference resolves through the right registry, with the right token, to its multi-arch index, and no tag means `latest`; Phase 1 takes the licence's year range from the first commit, never overwrites an existing CHANGELOG, and commits nothing; Phase 5 never overwrites an existing `scorecard.yml`; and every action in every template is pinned by a commit SHA. [`tests/plant-violations.py`](tests/plant-violations.py) then breaks those promises nine ways on a copy, listed in [`tests/plants.tsv`](tests/plants.tsv), and fails the run if the tests stay green through any of them. Both run in CI on every push.
+
+```bash
+./tests/test-scripts.sh
+python3 tests/plant-violations.py -- ./tests/test-scripts.sh
+```
+
 ## Contributing
 
 These runbooks codify one maintainer's standard. PRs are welcome, but only for:

@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_(no unreleased changes yet)_
+### Added
+
+- **Tests of what the scripts promise, and proof that they can fail.** `tests/test-scripts.sh` runs the four scripts against fakes of `gh` and `curl` and temporary repositories, and asserts what each promises, including that every template action is pinned by a commit SHA; `tests/plant-violations.py` breaks those promises nine ways on a copy and requires the tests to notice each. Both run in CI on every push.
 
 ## [1.3.2] - 2026-05-06
 
