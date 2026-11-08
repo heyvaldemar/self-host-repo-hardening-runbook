@@ -8,3 +8,4 @@
 "scripts/apply-phase-1.sh"	"if [[ -f CHANGELOG.md ]]; then"	"if false; then"	"an existing CHANGELOG overwritten"
 "scripts/apply-phase-5.sh"	"if [[ -f \"$DEST\" ]]; then"	"if false; then"	"an existing scorecard.yml overwritten"
 "templates/scorecard.yml"	"uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6"	"uses: actions/checkout@v6"	"a template action pinned by tag instead of commit"
+"scripts/resolve-image-digest.sh"	"  | curl -sS -I -K - \\\n"	"  | curl -sS -I -K - -H \"Authorization: Bearer ${TOKEN}\" \\\n"	"the registry token back on curl's command line"

@@ -61,13 +61,11 @@ case "$REPO" in
     ;;
 esac
 
-AUTH_HEADER=""
-if [ -n "$TOKEN" ]; then
-  AUTH_HEADER="Authorization: Bearer ${TOKEN}"
-fi
-
-DIGEST=$(curl -sS -I \
-  ${AUTH_HEADER:+-H "$AUTH_HEADER"} \
+# THE TOKEN GOES TO CURL ON STDIN, as a config line (-K -), not as -H on its
+# command line, where every user on the machine reads it with ps. printf is the
+# shell's own. With no token the config is empty.
+DIGEST=$(if [ -n "$TOKEN" ]; then printf 'header = "Authorization: Bearer %s"\n' "$TOKEN"; fi \
+  | curl -sS -I -K - \
   -H "Accept: application/vnd.oci.image.index.v1+json" \
   -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json" \
   -H "Accept: application/vnd.oci.image.manifest.v1+json" \

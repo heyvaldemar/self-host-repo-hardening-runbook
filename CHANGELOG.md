@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_(no unreleased changes yet)_
+### Security
+
+- **`scripts/resolve-image-digest.sh` keeps the registry token off curl's command line.** It sent the pull token as `-H "Authorization: Bearer <token>"`, in `curl`'s arguments, where every user on the machine reads it with `ps`. The header now reaches `curl` as a config line on stdin (`-K -`), written by the shell's own `printf`. The tests check that the token is sent and that it never appears in `curl`'s arguments, and a new plant puts it back on the command line for the tests to catch.
 
 ## [1.4.0] - 2026-09-26
 

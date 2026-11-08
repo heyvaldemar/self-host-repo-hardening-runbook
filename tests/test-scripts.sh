@@ -29,11 +29,13 @@ f="$FIXTURES/$(printf '%s' "$2" | tr '/' '_')"
 [ -f "$f" ] || exit 1
 cat "$f"
 SH
-# curl: records its arguments; a token URL answers a token, a HEAD answers a
-# digest header unless NO_DIGEST is set.
+# curl: records its arguments, and with -K - the config it reads on stdin,
+# to $CALLS.stdin; a token URL answers a token, a HEAD answers a digest header
+# unless NO_DIGEST is set.
 cat > "$WORK/bin/curl" <<'SH'
 #!/bin/bash
 printf '%s\n' "$*" >> "$CALLS"
+case " $* " in *" -K - "*) cat >> "$CALLS.stdin" ;; esac
 case "$*" in
   *"/token"*) echo '{"token":"t0ken"}' ;;
   *" -I "*|*"-I "*) [ -n "${NO_DIGEST:-}" ] || printf 'HTTP/1.1 200 OK\r\ndocker-content-digest: sha256:%064d\r\n' 7 ;;
@@ -59,15 +61,16 @@ bash "$D" only-one >/dev/null 2>&1; check "$?" "2" "a wrong argument count is a 
 
 echo "=== resolve-image-digest.sh"
 R="$ROOT/scripts/resolve-image-digest.sh"
-digest() { : > "$CALLS"; bash "$R" "$1" 2>/dev/null; }
+digest() { : > "$CALLS"; : > "$CALLS.stdin"; bash "$R" "$1" 2>/dev/null; }
 check "$(digest postgres:16)" "sha256:$(printf '%064d' 7)" "prints the digest the registry returned"
 check "$(grep -c 'registry-1.docker.io/v2/library/postgres/manifests/16' "$CALLS")" "1" "a bare name is a Docker Hub library image"
-check "$(grep -c 'Authorization: Bearer t0ken' "$CALLS")" "1" "Docker Hub is asked with a token"
+check "$(grep -c 'Authorization: Bearer t0ken' "$CALLS.stdin")" "1" "Docker Hub is asked with a token"
+check "$(grep -c 't0ken' "$CALLS")" "0" "and the token is in curl's config on stdin, never in its arguments"
 check "$(grep -c 'application/vnd.oci.image.index.v1+json' "$CALLS")" "1" "the multi-arch index is asked for, not one platform's manifest"
 digest bitnami/keycloak >/dev/null
 check "$(grep -c 'registry-1.docker.io/v2/bitnami/keycloak/manifests/latest' "$CALLS")" "1" "no tag means latest"
 digest quay.io/keycloak/keycloak:26.2.5 >/dev/null
-check "$(grep -c 'https://quay.io/v2/keycloak/keycloak/manifests/26.2.5' "$CALLS"):$(grep -c 'Authorization' "$CALLS")" "1:0" "quay.io is asked directly, without a token"
+check "$(grep -c 'https://quay.io/v2/keycloak/keycloak/manifests/26.2.5' "$CALLS"):$(cat "$CALLS" "$CALLS.stdin" | grep -c 'Authorization')" "1:0" "quay.io is asked directly, without a token"
 digest ghcr.io/o/image:t >/dev/null
 check "$(grep -c 'ghcr.io/token?scope=repository:o/image:pull' "$CALLS"):$(grep -c 'https://ghcr.io/v2/o/image/manifests/t' "$CALLS")" "1:1" "ghcr.io is asked with an anonymous token"
 NO_DIGEST=1 bash "$R" postgres:16 >/dev/null 2>&1; check "$?" "1" "no digest from the registry is an error, not an empty line"
