@@ -107,7 +107,7 @@ head -20 Dockerfile
 
    LABEL org.opencontainers.image.title="<image-name>" \
          org.opencontainers.image.description="<one-paragraph description>" \
-         org.opencontainers.image.authors="Vladimir Mikhalev <v@valdemar.ai>" \
+         org.opencontainers.image.authors="Vladimir Mikhalev <connect@valdemar.ai>" \
          org.opencontainers.image.vendor="heyvaldemar" \
          org.opencontainers.image.source="https://github.com/heyvaldemar/<repo>" \
          org.opencontainers.image.documentation="https://github.com/heyvaldemar/<repo>#readme" \
