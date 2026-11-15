@@ -9,11 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _(no unreleased changes yet)_
 
-## [1.5.1] - 2026-11-15
+## [1.6.0] - 2026-11-15
 
 ### Changed
 
-- **Phase 2 installs cosign before the push.** In kubectl-docker on 5 November 2026, `cosign-installer` got a 504 after the push, so signing could not run and two tags named an unsigned image for 89 minutes. Step 4 now installs cosign v2.6.1 in the build job before `Build and push`, so a failed install fails the job while nothing is public, and a Phase 2 gate checks the order. The window between the push and the signature is otherwise unchanged, and the runbook says so: only pushing by digest and naming after signing would close it.
+- **Phase 2: a tag never names an unsigned image.** `Build and push` becomes `Build and push by digest`: `push-by-digest=true`, no tags. Step 4's action now runs in this order:
+  - signs the digest;
+  - attests it;
+  - checks that the signature is on the registry and verifies as the run (`MODE=before-tags`);
+  - only then points the tags at the digest, with `scripts/tag-digest.sh` (`docker buildx imagetools create --prefer-index=false`; without the flag a single-platform manifest is wrapped in a new, unsigned index);
+  - reads every tag back.
+
+  In 1.5.0 the tags still moved with the push. Any failure between the push and the signature left them on an unsigned image for a while, as in kubectl-docker on 5 November 2026: `cosign-installer` got a 504 after the push, and two tags named an unsigned image for 89 minutes. A run that cannot sign now names nothing.
+- **Cosign is installed in the build job before the push**, so that failure stops the job before anything is pushed.
+- **The `signing` test has five cases.** With signing failing, `latest` stays on an earlier signed image and a new tag never appears. The "push stopped half way" case is gone.
+- **The job table, the commit template, the Phase 2 gates and Pitfall 10 follow.**
 
 ## [1.5.0] - 2026-11-15
 
@@ -138,8 +148,8 @@ _(no unreleased changes yet)_
 - `.github/dependabot.yml`: dogfood. Tracks updates to the templates' own action pins as new SHAs ship upstream.
 - `.github/workflows/scorecard.yml`: dogfood. The runbook scores itself against the standard it publishes.
 
-[Unreleased]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.5.1...HEAD
-[1.5.1]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.5.0...v1.5.1
+[Unreleased]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.3.2...v1.4.0

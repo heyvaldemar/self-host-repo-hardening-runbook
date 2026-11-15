@@ -337,7 +337,7 @@ Removed:
 |---|---|---|---|
 | `lint` | push, PR, schedule, manual | ✅ yes | hadolint + shellcheck |
 | `signing` | push, PR, schedule, manual | ✅ yes | the sign, attest and read-back action on a local registry with six planted failures; publishes nothing |
-| `build` | push, PR, schedule, manual | ✅ yes (the publish step is conditional) | multi-arch buildx + BuildKit attestations, then cosign sign, GitHub provenance attestation and a read-back of every pushed tag from Docker Hub. PR runs build with `push: false`. |
+| `build` | push, PR, schedule, manual | ✅ yes (the publish step is conditional) | multi-arch buildx + BuildKit attestations, pushed by digest with no tag; then cosign sign, GitHub provenance attestation, a signature check, the tags, and a read-back of every tag from Docker Hub. PR runs build with `push=false`. |
 | `scan-trivy` | post-build, non-PR only | ❌ `continue-on-error: true` | Trivy scan of the published digest, SARIF to GitHub Security tab |
 | `dockerhub-description` | push to main only | ❌ | Sync README.md to Docker Hub via `peter-evans/dockerhub-description` |
 
@@ -449,7 +449,15 @@ Removed:
          org.opencontainers.image.vendor=heyvaldemar
          org.opencontainers.image.licenses=MIT
 
-   - name: Build and push
+   - name: Install cosign before anything is pushed
+     if: github.event_name != 'pull_request'
+     uses: sigstore/cosign-installer@<sha> # v4.1.3
+     with:
+       cosign-release: "v2.6.1"
+
+   # Pushed by digest, with no tag: the tags are created in step 4, only
+   # after the signature is on the registry and verifies.
+   - name: Build and push by digest
      id: build
      uses: docker/build-push-action@<sha> # v7
      timeout-minutes: 20
@@ -457,9 +465,8 @@ Removed:
        context: .
        file: Dockerfile
        platforms: linux/amd64,linux/arm64
-       push: ${{ github.event_name != 'pull_request' }}
+       outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
        pull: true
-       tags: ${{ steps.meta.outputs.tags }}
        labels: ${{ steps.meta.outputs.labels }}
        build-args: |
          VCS_REF=${{ steps.meta-build.outputs.vcs_ref }}
@@ -474,18 +481,10 @@ Removed:
 
    `sbom: true` and `provenance: mode=max` are the BuildKit attestation flags. `mode=max` includes full provenance (build environment, materials, configuration). The `min` mode strips the materials section.
 
-4. **Sign first, then attest, then read back what the registry serves.** All three run after the push, in one local composite action, `.github/actions/sign-attest-verify/action.yml`. Copy it from [aws-kubectl-docker](https://github.com/heyvaldemar/aws-kubectl-docker/tree/40860470ff3e79abdb1eb2b111f7d012647fc910/.github/actions/sign-attest-verify) together with [`scripts/sign-digest.sh`](https://github.com/heyvaldemar/aws-kubectl-docker/blob/40860470ff3e79abdb1eb2b111f7d012647fc910/scripts/sign-digest.sh), [`scripts/verify-published.sh`](https://github.com/heyvaldemar/aws-kubectl-docker/blob/40860470ff3e79abdb1eb2b111f7d012647fc910/scripts/verify-published.sh) and [`tests/signing-plants.sh`](https://github.com/heyvaldemar/aws-kubectl-docker/blob/40860470ff3e79abdb1eb2b111f7d012647fc910/tests/signing-plants.sh), and change the example image name in their comments. Install cosign in the build job **before** `Build and push`, then call the action right after it:
+4. **A tag never names an unsigned image: sign, attest, check, name, read back.** The build above pushes by digest and creates no tag. Everything after the push runs in one local composite action, `.github/actions/sign-attest-verify/action.yml`. Copy it from [aws-kubectl-docker](https://github.com/heyvaldemar/aws-kubectl-docker/tree/dd1fd3529414434635ae74866c11622d0d43291d/.github/actions/sign-attest-verify), with [`scripts/sign-digest.sh`](https://github.com/heyvaldemar/aws-kubectl-docker/blob/dd1fd3529414434635ae74866c11622d0d43291d/scripts/sign-digest.sh), [`scripts/verify-published.sh`](https://github.com/heyvaldemar/aws-kubectl-docker/blob/dd1fd3529414434635ae74866c11622d0d43291d/scripts/verify-published.sh), [`scripts/tag-digest.sh`](https://github.com/heyvaldemar/aws-kubectl-docker/blob/dd1fd3529414434635ae74866c11622d0d43291d/scripts/tag-digest.sh) and [`tests/signing-plants.sh`](https://github.com/heyvaldemar/aws-kubectl-docker/blob/dd1fd3529414434635ae74866c11622d0d43291d/tests/signing-plants.sh), and change the example image name in their comments. The build job calls it right after the push:
 
    ```yaml
-   - name: Install cosign before anything is pushed
-     if: github.event_name != 'pull_request'
-     uses: sigstore/cosign-installer@<sha> # v4.1.3
-     with:
-       cosign-release: "v2.6.1"
-
-   # ... Build and push ...
-
-   - name: Sign, attest, and read back every pushed tag from Docker Hub
+   - name: Sign, attest, name, and read back every tag from Docker Hub
      if: ${{ !cancelled() && github.event_name != 'pull_request' && steps.meta.outcome == 'success' }}
      uses: ./.github/actions/sign-attest-verify
      with:
@@ -495,15 +494,22 @@ Removed:
    ```
 
    Inside the action, in this order:
-   - **Sign** the pushed digest with cosign, keyless, once (the signature belongs to the digest, not to a tag), with two retries on a 5xx from Fulcio, Rekor or the registry. It waits for nothing but cosign's installation.
-   - **Attest** build provenance with `actions/attest-build-provenance`, under `!cancelled()`, so a failed signature does not skip it either. Its failure still fails the job, after the signature exists.
-   - **Read back** every pushed tag from Docker Hub, also under `!cancelled()`. Resolve the digest the tag names now, require its `sha256-<digest>.sig` (HTTP 200) and a `cosign verify` with the run's exact identity (`https://github.com/${{ github.workflow_ref }}`) and `--certificate-github-workflow-sha`. A missing signature fails the job. The digest this run built is then signed again; a digest it did not build, because another run moved the tag since, never is. The step's `if:` above lets it run even after a push refused half way, which is how aws-kubectl 2.2.0 went out unsigned: the build reports no digest then, so those tags are reported, not signed.
+   - **Sign** the pushed digest with cosign, keyless, once (the signature belongs to the digest, not to a tag), with two retries on a 5xx from Fulcio, Rekor or the registry. It waits for nothing but cosign, which the build job installed before the push.
+   - **Attest** build provenance with `actions/attest-build-provenance`, under `!cancelled()`, so a failed signature does not skip it either. Its failure still fails the job.
+   - **Check before naming.** `verify-published.sh` with `MODE=before-tags` requires the digest's `sha256-<digest>.sig` (HTTP 200) and a `cosign verify` with the run's exact identity (`https://github.com/${{ github.workflow_ref }}`) and `--certificate-github-workflow-sha`. If it fails, nothing is named, and every tag keeps naming what it named.
+   - **Name** the image: `scripts/tag-digest.sh` points every tag at the digest with `docker buildx imagetools create --prefer-index=false`. The flag matters. It makes the command copy the source as it is; without it, a single-platform manifest is wrapped in a new index whose digest nobody signed.
+   - **Read back** every tag from Docker Hub. Resolve the digest it names now and require the same signature. A tag another run has moved since must carry that run's signature (it gets 300 seconds), and is never signed here.
 
-   **Why cosign before the push.** On 5 November 2026 in kubectl-docker, GitHub answered `cosign-installer` 504 after the push ([run 42056140684](https://github.com/heyvaldemar/kubectl-docker/actions/runs/42056140684), attempt 1). Signing could not run, and `1.36` and `1.36.6` named an unsigned image for 89 minutes. Installed first, a failed download fails the job while nothing is public, and the action finds that cosign and does not download it again. Anything else that fails between the push and the signature still leaves a window, which the read-back reports; only pushing by digest and adding the tags after signing would close it.
+   **Why this order.** Earlier versions of this runbook put the attestation first, gave every later step the default `if:` (which is `success()`), and let the push move the tags. In aws-kubectl on 2 November 2026, Rekor answered the attestation `(502) Bad Gateway` ([run 41472494237](https://github.com/heyvaldemar/aws-kubectl-docker/actions/runs/41472494237)). Signing was skipped, and `latest`, `edge` and `kube-1.37` named an unsigned image for 37 hours. In kubectl-docker on 5 November, `cosign-installer` got a 504 after the push ([run 42056140684](https://github.com/heyvaldemar/kubectl-docker/actions/runs/42056140684), attempt 1), and `1.36` and `1.36.6` named an unsigned image for 89 minutes. Signing first fixes the first failure; installing cosign before the push fixes the second. Only naming after signing closes the window for every other failure between push and signature.
 
-   **Why this order.** Earlier versions of this runbook put the attestation first and gave every later step the default `if:`, which is `success()`. On 2 November 2026 Rekor answered aws-kubectl's attestation `(502) Bad Gateway` ([run 41472494237](https://github.com/heyvaldemar/aws-kubectl-docker/actions/runs/41472494237)). The image was already pushed, signing was skipped, and `latest`, `edge` and `kube-1.37` named an unsigned image for 37 hours. Once an image is public, a step that must still run says so with `!cancelled()`; and a run that ends without a signature has to fail loudly, which is what the read-back is for.
+   **Test it without publishing.** Copy the `signing` job from aws-kubectl-docker's [`publish.yml`](https://github.com/heyvaldemar/aws-kubectl-docker/blob/dd1fd3529414434635ae74866c11622d0d43291d/.github/workflows/publish.yml) and make `build` need it. It runs the same action five times against a `registry:3` service container, with keys made on the runner:
+   - nothing planted;
+   - the real attestation step failing (the job has no `id-token: write`, so it fails before it contacts anything);
+   - signing failing: `latest` stays on an earlier signed image, and a tag new in that run never appears;
+   - signing silently skipped: no tag appears;
+   - another run moving a tag right after naming.
 
-   **Test it without publishing.** Copy the `signing` job from aws-kubectl-docker's [`publish.yml`](https://github.com/heyvaldemar/aws-kubectl-docker/blob/40860470ff3e79abdb1eb2b111f7d012647fc910/.github/workflows/publish.yml) and make `build` need it. It runs the same action six times against a `registry:3` service container, with keys made on the runner. The cases: nothing planted; the real attestation step failing (the job has no `id-token: write`, so it fails before it contacts anything); signing failing; signing silently skipped; a tag moved to an image another key signed; a push that stopped half way. `tests/signing-plants.sh check` asserts what each must show. Nothing reaches Docker Hub, GitHub's attestation store or Sigstore's public log.
+   `tests/signing-plants.sh check` asserts what each case must show. Nothing reaches Docker Hub, GitHub's attestation store or Sigstore's public log.
 
    The attestation's `push-to-registry: false` is deliberate. The action can push the attestation to the registry as an OCI referrer sidecar, but Docker Hub's OCI referrer credential handoff proved unreliable in practice (see [aws-kubectl-docker hotfix #20](https://github.com/heyvaldemar/aws-kubectl-docker/pull/20)). Keep `push-to-registry: false`. The attestation remains discoverable via GitHub Attestations at `https://github.com/heyvaldemar/<repo>/attestations`.
 
@@ -511,10 +517,11 @@ Removed:
 
 6. **PR-skip discipline.** Every step that requires registry credentials or produces an attestation must be gated with `if: github.event_name != 'pull_request'`:
    - `Login to Docker Hub`
-   - `Sign, attest, and read back every pushed tag from Docker Hub`
+   - `Install cosign before anything is pushed`
+   - `Sign, attest, name, and read back every tag from Docker Hub`
    - `dockerhub-description` job (gated at job level via `if: github.event_name == 'push' && github.ref == 'refs/heads/main'`)
 
-   PR builds still run the actual `Build and push` step with `push: false` (a dry-run that validates the build), so a Dockerfile regression caught in PR is the same surface as in main. The `signing` job runs on PRs too: it publishes nothing.
+   PR builds still run the actual `Build and push by digest` step with `push=false` (a dry-run that validates the build), so a Dockerfile regression caught in PR is the same surface as in main. The `signing` job runs on PRs too: it publishes nothing.
 
 7. **`scan-trivy` job**: runs after the build, scans the published digest, uploads SARIF. Skipped on PR builds (the digest doesn't exist in the registry). `continue-on-error: true` so a new CVE disclosure doesn't red-CI ongoing work.
 
@@ -584,16 +591,18 @@ shape that aws-kubectl-docker established as the heyvaldemar baseline.
 
 Jobs:
 - lint — hadolint + shellcheck. Blocking. 5-minute timeout.
-- signing — the sign, attest and read-back action on a local registry
-  with six planted failures (attestation fails, signing fails or is
-  skipped, a moved tag, a half-finished push). Publishes nothing.
+- signing — the sign, attest, name and read-back action on a local
+  registry with five planted failures (attestation fails, signing fails
+  or is skipped and no tag is created, a tag moved right after naming).
+  Publishes nothing.
 - build — multi-arch (linux/amd64, linux/arm64) with BuildKit
-  attestations (sbom: true, provenance: mode=max), then, in
-  .github/actions/sign-attest-verify: cosign keyless signing (Sigstore
-  OIDC) first, GitHub native build provenance second (a failed
-  attestation no longer skips signing), and a read-back of every pushed
-  tag from Docker Hub that fails the job on a missing signature. PR
-  builds run with push: false (dry-run; the action is gated to non-PR).
+  attestations (sbom: true, provenance: mode=max), pushed by digest with
+  no tag; then, in .github/actions/sign-attest-verify: cosign keyless
+  signing (Sigstore OIDC), GitHub native build provenance (a failed
+  attestation no longer skips signing), a check that the signature
+  verifies, and only then the tags; last, a read-back of every tag from
+  Docker Hub. A tag never names an unsigned image. PR builds run with
+  push=false (dry-run; the action is gated to non-PR).
 - scan-trivy — Trivy scan of the published digest, SARIF upload to
   GitHub Security tab. continue-on-error: true so new CVE
   disclosures don't red-CI ongoing work; the response you can act on is
@@ -1083,19 +1092,25 @@ grep -c "provenance: mode=max" .github/workflows/publish.yml  # expected: 1
 grep "cosign-release:" .github/actions/sign-attest-verify/action.yml | grep -E "v2\.[0-9]+\.[0-9]+"
 # expected: matches
 
-# Cosign installed in the build job before the push
+# Cosign installed before the push, and the push by digest with no tags
 grep -n "name: Install cosign before anything is pushed\|name: Build and push" .github/workflows/publish.yml
 # expected: two lines, the install first
+grep -A12 "name: Build and push by digest" .github/workflows/publish.yml | grep -c "push-by-digest=true"
+# expected: 1
+grep -A12 "name: Build and push by digest" .github/workflows/publish.yml | grep -c "steps.meta.outputs.tags"
+# expected: 0 (the tags are created by the action, after signing)
 
 # attest-build-provenance push-to-registry is false
 grep -A6 "attest-build-provenance" .github/actions/sign-attest-verify/action.yml | grep "push-to-registry: false"
 # expected: matches
 
-# Sign before attest, and attest and read-back under !cancelled()
-grep -n "name: Sign the pushed digest\|name: Attest build provenance\|name: Every pushed tag" .github/actions/sign-attest-verify/action.yml
-# expected: three lines, in that order
-grep -A3 "name: Attest build provenance\|name: Every pushed tag" .github/actions/sign-attest-verify/action.yml | grep -c "!cancelled()"
-# expected: 2
+# Sign, attest, check, name, read back, in that order
+grep -n "name: Sign the pushed digest\|name: Attest build provenance\|name: The signature verifies before any tag\|name: Name the signed image\|name: Every tag names" .github/actions/sign-attest-verify/action.yml
+# expected: five lines, in that order
+grep -A2 "name: Name the signed image" .github/actions/sign-attest-verify/action.yml | grep -c "steps.signed.outcome == 'success'"
+# expected: 1 (no verified signature, no tag)
+grep -c "imagetools create --prefer-index=false" scripts/tag-digest.sh
+# expected: at least 1
 
 # The action is called after the push, gated to non-PR, and the signing test gates the build
 grep -B1 "uses: ./.github/actions/sign-attest-verify" .github/workflows/publish.yml | grep -c "github.event_name != 'pull_request'"
@@ -1332,7 +1347,7 @@ Reference: aws-kubectl-docker [PR #37](https://github.com/heyvaldemar/aws-kubect
 
 A step with no status function in its `if:` runs only when every step before it succeeded. Put `Attest build provenance` before `Install cosign` and `Sign image with cosign`, as this runbook did until November 2026, and any failure of the attestation skips signing after the image is already public. On 2 November 2026 Rekor answered aws-kubectl's attestation `(502) Bad Gateway` ([run 41472494237](https://github.com/heyvaldemar/aws-kubectl-docker/actions/runs/41472494237)): `latest`, `edge` and `kube-1.37` named an unsigned image for 37 hours, and nothing in the run said which tags were affected. The same shape was in four more image repositories. A `Verify every tag's signature` step placed after signing does not help: it is skipped by the same condition.
 
-**Sign first, give every step after the push `!cancelled()`, and read the tags back from the registry** (Phase 2, step 4). Test the order, not only the code: the `signing` job makes the real attestation step fail and checks that the image was signed before it did.
+**Sign first, push by digest, and create the tags only after the signature verifies; then read the tags back from the registry** (Phase 2, step 4). Test the order, not only the code: the `signing` job makes the real attestation step fail and checks that the image was signed before it did. It also makes signing fail and checks that no tag moved.
 
 ## Rollout strategy
 
