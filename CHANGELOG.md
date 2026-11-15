@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _(no unreleased changes yet)_
 
+## [1.5.0] - 2026-11-15
+
+### Changed
+
+- **Phase 2 signs before it attests, and reads every pushed tag back from Docker Hub.** The runbook put `actions/attest-build-provenance` before `Install cosign` and `Sign image with cosign`, every one with the default `if:`, so a failed attestation skipped signing after the image was already public. That happened in aws-kubectl-docker on 2 November 2026, when Rekor answered the attestation 502 and three tags named an unsigned image for 37 hours. Phase 2 step 4 now uses one composite action, `.github/actions/sign-attest-verify`, as aws-kubectl-docker 2.3.1 does. It signs the digest first, attests under `!cancelled()`, and then resolves every pushed tag on Docker Hub. Each digest must carry its `.sig` and pass `cosign verify` with the run's exact identity, or the job fails. A `signing` job runs the same action against a local registry with six planted failures, the real attestation step failing among them, before anything is published. The job table, the commit template and the Phase 2 verification gates follow; the gates now read the action, where the cosign pin and `push-to-registry: false` live.
+
+### Added
+
+- **Pitfall 10: signing after the attestation, with the default `if:`.** Pitfall 5 also points to the action's signing script.
+
 ## [1.4.1] - 2026-11-08
 
 ### Security
@@ -122,7 +132,10 @@ _(no unreleased changes yet)_
 - `.github/dependabot.yml`: dogfood. Tracks updates to the templates' own action pins as new SHAs ship upstream.
 - `.github/workflows/scorecard.yml`: dogfood. The runbook scores itself against the standard it publishes.
 
-[Unreleased]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.3.2...HEAD
+[Unreleased]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.4.1...v1.5.0
+[1.4.1]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.4.0...v1.4.1
+[1.4.0]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.3.2...v1.4.0
 [1.3.2]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/heyvaldemar/self-host-repo-hardening-runbook/compare/v1.2.0...v1.3.0
